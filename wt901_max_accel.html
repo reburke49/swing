@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WT901BLECL · Max Accel (iPhone)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 16px; color: #0f172a; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03); flex: 1; min-width: 260px; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    h2 { font-size: 16px; margin: 0 0 8px; }
+    .btn { appearance: none; border: 0; border-radius: 10px; padding: 10px 14px; background: #059669; color: white; font-weight: 600; }
+    .btn:disabled { background: #9ca3af; }
+    .field { display: flex; align-items: center; gap: 8px; }
+    .kv { display: grid; grid-template-columns: auto auto; gap: 4px 10px; font-variant-numeric: tabular-nums; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    small { color: #64748b; }
+    .value { font-size: 22px; font-weight: 700; }
+    .warn { color: #b45309; }
+    .ok { color: #047857; }
+    .err { color: #b91c1c; }
+    .tiny { font-size: 12px; }
+    footer { color:#64748b; font-size:12px; margin-top:16px; }
+  </style>
+</head>
+<body>
+  <h1>WT901BLECL · Max Acceleration (X/Y/Z)</h1>
+  <div class="row">
+    <div class="card">
+      <h2>1) Connect</h2>
+      <div class="field">
+        <button id="btnConnect" class="btn">Connect & Subscribe</button>
+        <span id="status">Disconnected</span>
+      </div>
+      <div class="tiny"><small>Tip: On iPhone, open this page in the <b>Bluefy</b> or <b>WebBLE</b> browser.</small></div>
+      <div class="tiny"><small>We auto-detect the notify characteristic and parse 0x55 0x61 frames (accel, gyro, angle).</small></div>
+    </div>
+    <div class="card">
+      <h2>2) Window</h2>
+      <div class="field">
+        <label>Duration (s)</label>
+        <input id="winSec" type="number" value="10" min="1" max="120" style="width:80px;">
+        <button id="btnReset" class="btn" style="background:#2563eb">Reset Max</button>
+      </div>
+      <div class="tiny"><small>Rolling window: samples older than this are dropped. Tap "Reset Max" to clear.</small></div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px">
+    <div class="card">
+      <h2>Live Accel (g)</h2>
+      <div class="kv mono">
+        <div>X</div><div id="liveAx" class="value">—</div>
+        <div>Y</div><div id="liveAy" class="value">—</div>
+        <div>Z</div><div id="liveAz" class="value">—</div>
+      </div>
+      <div class="tiny"><small>Scaled using: int16/32768×16g (per WT BLE protocol).</small></div>
+    </div>
+    <div class="card">
+      <h2>Window Max (g)</h2>
+      <div class="kv mono">
+        <div>Max X</div><div id="maxAx" class="value ok">—</div>
+        <div>Max Y</div><div id="maxAy" class="value ok">—</div>
+        <div>Max Z</div><div id="maxAz" class="value ok">—</div>
+      </div>
+      <div class="tiny"><small>Computed over the last <span id="winLabel">10</span>s of samples.</small></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <h2>Debug</h2>
+    <div class="kv tiny mono">
+      <div>Packets</div><div id="packets">0</div>
+      <div>Last Flag</div><div id="flag">—</div>
+      <div>Last Len</div><div id="pktLen">—</div>
+      <div>Last Error</div><div id="err" class="err">—</div>
+    </div>
+  </div>
+
+  <footer>
+    Based on WitMotion WT901 BLE protocol (0x55 0x61 combined frame). Quaternion/magnetometer available via read-register commands.
+  </footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const statusEl = $("status");
+const liveAx = $("liveAx"), liveAy = $("liveAy"), liveAz = $("liveAz");
+const maxAx = $("maxAx"), maxAy = $("maxAy"), maxAz = $("maxAz");
+const winInput = $("winSec"), winLabel = $("winLabel");
+const errEl = $("err"), flagEl = $("flag"), pktLenEl = $("pktLen"), packetsEl = $("packets");
+
+let device, server, charNotify;
+let packets = 0;
+let windowSec = 10;
+let buf = []; // {t, ax, ay, az}
+
+function setStatus(s){ statusEl.textContent = s; }
+function clampWindow(){
+  const cutoff = Date.now() - windowSec*1000;
+  while (buf.length && buf[0].t < cutoff) buf.shift();
+}
+function updateMax(){
+  if (buf.length === 0) { maxAx.textContent = maxAy.textContent = maxAz.textContent = "—"; return; }
+  let mX = -1e9, mY = -1e9, mZ = -1e9;
+  for (const r of buf) { if (r.ax > mX) mX = r.ax; if (r.ay > mY) mY = r.ay; if (r.az > mZ) mZ = r.az; }
+  maxAx.textContent = mX.toFixed(3);
+  maxAy.textContent = mY.toFixed(3);
+  maxAz.textContent = mZ.toFixed(3);
+}
+function resetMax(){
+  buf = [];
+  updateMax();
+}
+
+winInput.addEventListener("change", ()=>{
+  windowSec = Math.max(1, Math.min(120, Number(winInput.value)||10));
+  winLabel.textContent = String(windowSec);
+  clampWindow(); updateMax();
+});
+$("btnReset").addEventListener("click", resetMax);
+
+function dvI16LE(dv, off){
+  let v = dv.getInt16(off, true); // little-endian
+  return v;
+}
+function parseFrame(v){
+  // Expect 20 bytes: 0x55, 0x61, then 18 bytes = 9 * int16
+  const dv = new DataView(v.buffer, v.byteOffset, v.byteLength);
+  const len = dv.byteLength;
+  pktLenEl.textContent = len;
+  if (len < 20) { errEl.textContent = "short packet"; return null; }
+  const h = dv.getUint8(0), f = dv.getUint8(1);
+  flagEl.textContent = "0x"+f.toString(16);
+  if (h !== 0x55) { errEl.textContent = "bad header"; return null; }
+  if (f !== 0x61) { /* other flags: 0x71.. */ errEl.textContent = "non-0x61 flag"; return null; }
+  const arr = [];
+  for (let i=0;i<9;i++){ arr.push(dvI16LE(dv, 2 + i*2)); }
+  const [ax,ay,az, wx,wy,wz, roll,pitch,yaw] = arr;
+  const g = 16.0 / 32768.0;
+  const axg = ax * g, ayg = ay * g, azg = az * g;
+  // Update live
+  liveAx.textContent = axg.toFixed(3);
+  liveAy.textContent = ayg.toFixed(3);
+  liveAz.textContent = azg.toFixed(3);
+  // Add to rolling buffer
+  buf.push({ t: Date.now(), ax: axg, ay: ayg, az: azg });
+  clampWindow();
+  updateMax();
+  return true;
+}
+
+async function connect(){
+  try{
+    resetMax(); packets = 0; packetsEl.textContent = "0";
+    setStatus("Requesting device…");
+    // Bluefy/WebBLE support Web Bluetooth; we request all devices and include common custom services
+    const dev = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        0x180A, 0x180F, 0x181A, 0xFFE0, 0xFFF0 // include common custom services to gain access
+      ]
+    });
+    device = dev;
+    setStatus("Connecting…");
+    server = await device.gatt.connect();
+    setStatus("Discovering services…");
+    const services = await server.getPrimaryServices();
+    // Find a characteristic that supports notifications
+    let targetChar = null;
+    for (const svc of services){
+      const chars = await svc.getCharacteristics();
+      for (const ch of chars){
+        if (ch.properties && ch.properties.notify){
+          targetChar = ch; break;
+        }
+      }
+      if (targetChar) break;
+    }
+    if (!targetChar) { setStatus("No notify characteristic found"); return; }
+    charNotify = targetChar;
+    setStatus("Subscribing…");
+    await charNotify.startNotifications();
+    charNotify.addEventListener('characteristicvaluechanged', ev => {
+      packets += 1; packetsEl.textContent = String(packets);
+      const v = new Uint8Array(ev.target.value.buffer);
+      parseFrame(v);
+    });
+    setStatus("Streaming ✔︎");
+  }catch(e){
+    setStatus("Error"); errEl.textContent = String(e);
+    console.error(e);
+  }
+}
+
+$("btnConnect").addEventListener("click", ()=>{
+  if (!('bluetooth' in navigator)){
+    alert("Web Bluetooth not available. On iPhone use Bluefy/WebBLE app.");
+    return;
+  }
+  connect();
+});
+</script>
+</body>
+</html>

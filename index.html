@@ -349,7 +349,7 @@ function analyze(){
   // Guardrail: fix non-monotonic time by synthesizing dt
   const nonmono = rows.some((r,i)=> i>0 && rows[i].t <= rows[i-1].t);
   if (nonmono){
-    const dt = averageDt(rows) || 10;
+    const dt = averageDt(rows) || 10; // keep real dt if we can estimate it
     rows.forEach((r,i)=> r.t = i*dt);
   }
 
@@ -365,8 +365,6 @@ function analyze(){
     metrics.push(m);
     if (m.raw > bestRaw) bestRaw = m.raw;
   }
-  const denomRaw = TARGET_UP * (bestRaw || 1);
-
 
   if (!spans.length){
     $("#results").innerHTML = `<div>No swings detected with auto-thresholds.<br/>
@@ -382,6 +380,9 @@ function analyze(){
     return;
   }
 
+  // Now that bestRaw is known, set the denominator once
+  const denomRaw = TARGET_UP * (bestRaw || 1);
+
   // Swing Force normalization uses a fixed reference bat mass
   const refOz = 16;
   const refMassKg = refOz * 0.028349523125;
@@ -392,9 +393,8 @@ function analyze(){
   spans.forEach((span, idx)=>{
     const m = metrics[idx];
 
-    // Power Number: independent of bat weight
+    // Power Number: independent of bat weight; scaled with denomRaw
     const power = clamp(Math.round(100 * m.raw / denomRaw), 0, 100);
-
 
     // Swing Force: scaled by current bat mass vs reference mass
     const forceIdx = clamp(
@@ -433,6 +433,7 @@ function analyze(){
       dt≈${(averageDt(rows)||0).toFixed(1)} ms
     </div>`;
 }
+
 
 // ✅ keep listeners inside the same script block
 $("#analyze").addEventListener("click", analyze);

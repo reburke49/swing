@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bat Swing Analyzer (WT901)</title>
+<style>
+  :root{
+    --bg:#0b1020;--panel:#111735;--ink:#eef2ff;--muted:#94a3d8;--accent:#6ea8fe;
+    --good:#71f0a8;--warn:#ffd66e;--bad:#ff7a7a;--line:#1b2350
+  }
+  html,body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0f1630,#0b1020)}
+  h1{margin:0;font-size:18px;letter-spacing:.2px}
+  main{display:grid;grid-template-columns: 420px 1fr;gap:18px;padding:16px}
+  @media (max-width:1100px){ main{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .controls .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:8px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+  input[type="number"]{background:#0a0f22;border:1px solid #1d2750;border-radius:10px;color:var(--ink);padding:10px;min-width:120px}
+  input[type="range"]{width:180px}
+  button{background:var(--accent);border:0;color:#08102a;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer}
+  button.secondary{background:#283366;color:var(--ink)}
+  button[disabled]{opacity:.6;cursor:not-allowed}
+  .hint{color:var(--muted);font-size:12px;margin-top:6px}
+  details.data{margin-top:8px}
+  details.data>summary{cursor:pointer;color:#cfe2ff;list-style:none}
+  details.data>summary::-webkit-details-marker{display:none}
+  textarea{width:100%;min-height:140px;background:#0a0f22;border:1px solid #1d2750;border-radius:10px;color:var(--ink);padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .metrics{display:grid;grid-template-columns:repeat(3, 1fr);gap:14px;align-items:stretch}
+  @media (max-width:900px){ .metrics{grid-template-columns:1fr}}
+  .metric{background:#0f1733;border:1px solid #202a56;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .metric .label{font-size:12px;color:var(--muted);letter-spacing:.2px}
+  .metric .big{font-size:56px;line-height:1;font-weight:800;letter-spacing:0.5px}
+  .metric .unit{font-size:14px;color:var(--muted);margin-left:6px}
+  .metric.ok .big{color:var(--good)}
+  .metric.warn .big{color:var(--warn)}
+  .metric.bad .big{color:var(--bad)}
+  .results{margin-top:14px}
+  .swing{padding:10px 0;border-bottom:1px dashed #273162;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
+  .swing:last-child{border-bottom:0}
+  .small{color:var(--muted);font-size:12px}
+  .rowline{display:flex;gap:10px;align-items:center}
+</style>
+</head>
+<body>
+<header><h1>Bat Swing Analyzer – WT901 (knob-mount)</h1></header>
+
+<main>
+  <!-- Controls / Input -->
+  <section class="panel controls">
+    <div class="row">
+      <div>
+        <label>Barrel distance from knob (m)</label>
+        <input id="barrel_m" type="number" step="0.01" value="0.58"
+          title="Distance from sensor on knob to impact point (sweet spot). 26” bat ≈ 0.66 m total; sweet spot ~0.58 m."/>
+      </div>
+      <div>
+        <label>Bat weight (oz)</label>
+        <input id="bat_oz" type="number" step="1" value="16" title="Total bat weight in ounces."/>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Min swing duration (ms)</label>
+        <input id="min_ms" type="number" step="10" value="80"/>
+      </div>
+      <div>
+        <label>Gap bridge (ms)</label>
+        <input id="gap_ms" type="number" step="5" value="40"/>
+      </div>
+      <div>
+        <label>Noise floor cut (lowest %)</label>
+        <input id="quiet_pct" type="number" step="5" value="30"/>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="rowline">
+        <label>“100” set at <span id="upLabel">15%</span> stronger than best</label>
+        <input id="upPct" type="range" min="10" max="20" value="15"
+          oninput="document.getElementById('upLabel').textContent=this.value+'%';"/>
+      </div>
+      <button id="analyze">Analyze</button>
+      <button id="clear" class="secondary">Clear</button>
+    </div>
+
+    <details class="data" id="dataBox">
+      <summary>▼ Data input (paste WT901 export)</summary>
+      <textarea id="raw" placeholder="time,AccX(g),AccY(g),AccZ(g),AsX(°/s),AsY(°/s),AsZ(°/s)
+2025-8-27 18:13:16.349,0.119,-0.892,-0.509,81.055,-17.456,58.655
+..."></textarea>
+      <div class="hint">Keep the header row. Tabs or commas are fine. We’ll auto-detect units & fix uneven timestamps.</div>
+    </details>
+
+    <div id="status" class="hint"></div>
+  </section>
+
+  <!-- Big Metrics + Results -->
+  <section class="panel">
+    <div class="metrics">
+      <div class="metric" id="card_speed">
+        <div class="label">Fastest bat speed</div>
+        <div><span class="big" id="m_speed">—</span><span class="unit">mph</span></div>
+      </div>
+
+      <div class="metric" id="card_power">
+        <div class="label">Best Power Number</div>
+        <div><span class="big" id="m_power">—</span><span class="unit">(0–100)</span></div>
+      </div>
+
+      <div class="metric" id="card_force">
+        <div class="label">Best Swing Force</div>
+        <div><span class="big" id="m_force">—</span><span class="unit">(0–100)</span></div>
+      </div>
+    </div>
+
+    <div class="results">
+      <div class="small">Detected swings</div>
+      <div id="results" class="small">—</div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = sel => document.querySelector(sel);
+
+// ---------- math helpers ----------
+function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+function median(a){ if (!a.length) return 0; const s=[...a].sort((x,y)=>x-y); const m=Math.floor((s.length-1)/2); return s.length%2? s[m] : 0.5*(s[m]+s[m+1]); }
+function mad(a){ if(!a.length) return 0; const m=median(a); return median(a.map(v=>Math.abs(v-m))); }
+function rollingMax(arr, w){
+  const out = new Array(arr.length).fill(-Infinity); let q=[];
+  for (let i=0;i<arr.length;i++){
+    while(q.length && arr[q[q.length-1]]<=arr[i]) q.pop();
+    q.push(i);
+    const start = i-w+1;
+    if (q[0] < start) q.shift();
+    if (i>=w-1) out[i] = arr[q[0]];
+  }
+  for (let i=0;i<w-1;i++) out[i]=out[w-1];
+  return out;
+}
+
+// ---------- time parsing ----------
+function parseTS(t){
+  // Flexible: YYYY-M-D HH:MM:SS.m or .mm or none
+  const m = String(t).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
+  if (m){
+    const [_, Y, Mo, D, H, Mi, S, msRaw] = m;
+    const ms = (msRaw ?? "0").padStart(3,"0");
+    const iso = `${Y.padStart(4,"0")}-${Mo.padStart(2,"0")}-${D.padStart(2,"0")}T${H}:${Mi}:${S}.${ms}Z`;
+    const d = new Date(iso);
+    if (!isNaN(d)) return d.getTime();
+  }
+  const d2 = new Date(t);
+  if (!isNaN(d2)) return d2.getTime();
+  const num = Number(t);
+  if (isFinite(num)) return num < 3e10 ? Math.round(num*1000) : Math.round(num);
+  return NaN;
+}
+
+// ---------- table parsing ----------
+function parseTable(text){
+  const lines = text.replace(/\r/g,'').split('\n').filter(s=>s.trim().length>0);
+  if (!lines.length) return {rows:[], ok:false, msg:"No lines found"};
+  const hdr = lines[0].split(/\t|,/).map(h=>h.trim());
+  const findCol = (names)=> hdr.findIndex(h => names.some(n => h.toLowerCase().includes(n)));
+
+  const iTime = findCol(['time']);
+  const iAsX = findCol(['asx','gx','gyro x']);
+  const iAsY = findCol(['asy','gy','gyro y']);
+  const iAsZ = findCol(['asz','gz','gyro z']);
+  const iAx  = findCol(['accx','ax','acc x','accx(g)']);
+  const iAy  = findCol(['accy','ay','acc y','accy(g)']);
+  const iAz  = findCol(['accz','az','acc z','accz(g)']);
+
+  // Header validation: need at least one gyro axis
+  if (iAsX<0 && iAsY<0 && iAsZ<0){
+    return {rows:[], ok:false, msg:"No gyro columns (AsX/AsY/AsZ) found in header. Keep headers in the first row."};
+  }
+
+  const rows = [];
+  for (let k=1;k<lines.length;k++){
+    const cols = lines[k].split(/\t|,/);
+    if (cols.length < 2) continue;
+    rows.push({
+      rawTime: (iTime>=0? cols[iTime] : String(k-1)).trim(),
+      AsX: iAsX>=0? Number(cols[iAsX]) : NaN,
+      AsY: iAsY>=0? Number(cols[iAsY]) : NaN,
+      AsZ: iAsZ>=0? Number(cols[iAsZ]) : NaN,
+      Ax:  iAx>=0?  Number(cols[iAx])  : NaN,
+      Ay:  iAy>=0?  Number(cols[iAy])  : NaN,
+      Az:  iAz>=0?  Number(cols[iAz])  : NaN,
+    });
+  }
+
+  // build timestamps
+  let allTS = rows.map(r=>parseTS(r.rawTime));
+  const invalid = allTS.some(v=>!isFinite(v));
+  if (invalid){
+    const dtGuess = 10; // ms
+    allTS = rows.map((_,i)=> i*dtGuess);
+  }
+  const t0 = allTS[0] || 0;
+  allTS = allTS.map(t=> Math.max(0, t - t0));
+
+  // Unit guardrail: convert rad/s → deg/s if values look small
+  const gAbs = rows.map(r => Math.max(Math.abs(r.AsX||0),Math.abs(r.AsY||0),Math.abs(r.AsZ||0)));
+  const gMax = Math.max(...gAbs, 0);
+  const looksRad = gMax < 25;
+  const toDeg = looksRad ? (180/Math.PI) : 1;
+
+  const cleaned = rows.map((r,i)=>({
+    t: allTS[i],
+    gx: (r.AsX||0)*toDeg,
+    gy: (r.AsY||0)*toDeg,
+    gz: (r.AsZ||0)*toDeg,
+    ax: (r.Ax||0),
+    ay: (r.Ay||0),
+    az: (r.Az||0)
+  }));
+
+  // Outlier guardrail: clip absurd gyro spikes
+  const cap = 1200; // °/s
+  cleaned.forEach(r=>{
+    r.gx = clamp(r.gx, -cap, cap);
+    r.gy = clamp(r.gy, -cap, cap);
+    r.gz = clamp(r.gz, -cap, cap);
+  });
+
+  return {rows: cleaned, ok:true, msg:""};
+}
+
+// ---------- swing detection ----------
+function averageDt(rows){
+  let sum=0, cnt=0;
+  for (let i=1;i<rows.length;i++){
+    const d = rows[i].t - rows[i-1].t;
+    if (d>0 && d<200) { sum+=d; cnt++; }
+  }
+  return cnt? sum/cnt : 10;
+}
+function timeToSamples(rows, ms){
+  const dt = averageDt(rows) || 10;
+  return Math.max(1, Math.round(ms / dt));
+}
+function detectSwings(rows, opts){
+  const {minMs=80, gapMs=40, quietPct=30} = opts;
+
+  const gmag = rows.map(r=> Math.hypot(r.gx, r.gy, r.gz)); // °/s
+  const dtAvg = averageDt(rows);
+  const win = Math.max(2, Math.round(20 / (dtAvg||10)));
+  const gmax = rollingMax(gmag, win);
+
+  const n = gmax.length;
+  const sorted = [...gmax].sort((a,b)=>a-b);
+  const keep = Math.max(10, Math.floor(n * (quietPct/100)));
+  const quiet = sorted.slice(0, keep);
+  const base = median(quiet);
+  const qmad = mad(quiet);
+  const sigma = qmad * 1.4826;
+
+  const th_on  = Math.max(base + 3.5*sigma, 180);
+  const th_off = Math.max(base + 2.0*sigma, 120);
+  const th_peak= Math.max(base + 5.0*sigma, 260);
+
+  let inSwing=false, startIdx=null, lastIdx=null;
+  const spans=[];
+  const maxGap = timeToSamples(rows, gapMs);
+  const minSamples = timeToSamples(rows, minMs);
+
+  for (let i=0;i<n;i++){
+    const above = gmax[i] >= th_on;
+    const below = gmax[i] <= th_off;
+
+    if (!inSwing && above){
+      inSwing = true;
+      startIdx = i;
+      lastIdx = i;
+    } else if (inSwing){
+      if (!below){
+        lastIdx = i;
+      } else {
+        const gap = i - lastIdx;
+        if (gap > maxGap){
+          if (lastIdx - startIdx + 1 >= minSamples){
+            const peak = Math.max(...gmax.slice(startIdx, lastIdx+1));
+            if (peak >= th_peak){
+              spans.push([startIdx, lastIdx]);
+            }
+          }
+          inSwing=false; startIdx=null; lastIdx=null;
+        }
+      }
+    }
+  }
+  if (inSwing && lastIdx!=null && startIdx!=null){
+    if (lastIdx - startIdx + 1 >= minSamples){
+      const peak = Math.max(...gmax.slice(startIdx, lastIdx+1));
+      if (peak >= th_peak){
+        spans.push([startIdx, lastIdx]);
+      }
+    }
+  }
+
+  return {spans, thresholds:{th_on, th_off, th_peak, base, sigma}};
+}
+
+// ---------- metrics ----------
+function estimateMetrics(rows, span, barrelMeters){
+  const [i0,i1] = span;
+  const seg = rows.slice(i0, i1+1);
+  const t0 = msToClock(rows[i0].t), t1 = msToClock(rows[i1].t);
+
+  const degPerS = seg.map(r=> Math.hypot(r.gx,r.gy,r.gz));
+  const peakDegPerS = Math.max(...degPerS);
+  const peakRadPerS = peakDegPerS * Math.PI/180;
+
+  const batSpeed_mps = peakRadPerS * barrelMeters;
+  const batSpeed_mph = batSpeed_mps * 2.236936;
+
+  const gVec = seg.map(r=> Math.hypot(r.ax,r.ay,r.az));
+  const baseG = Math.min(...gVec.slice(0, Math.max(1,Math.floor(gVec.length*0.3))));
+  const dynG = gVec.map(g=> Math.max(0, g - baseG));
+  const peakG = Math.max(...dynG);
+
+  return {t0,t1,batSpeed_mps,batSpeed_mph,peakG};
+}
+function msToClock(ms){
+  const s = ms/1000;
+  const m = Math.floor(s/60);
+  const sec = (s%60).toFixed(3).padStart(6,'0');
+  return `${m}:${sec}`;
+}
+
+// ---------- state ----------
+let lastParsed = null; // {rows}
+let lastMetrics = null; // {spans, metrics, bestRaw, bestSpeedMps}
+let computing = false;
+
+// ---------- main ----------
+async function analyze(forceFromState=false){
+  if (computing) return;
+  computing = true;
+  const btn = $("#analyze");
+  btn.disabled = true;
+
+  const status = $("#status");
+  status.textContent = "";
+
+  const barrelMeters = Number($("#barrel_m").value)||0.58;
+  const batOz = Math.max(1, Number($("#bat_oz").value)||16);
+  const batMassKg = batOz * 0.028349523125; // oz → kg
+  const minMs  = Number($("#min_ms").value)||80;
+  const gapMs  = Number($("#gap_ms").value)||40;
+  const quietPct = clamp(Number($("#quiet_pct").value)||30, 10, 60);
+  const TARGET_UP = 1 + (Number($("#upPct").value)||15)/100;
+
+  try{
+    // Parse only if needed (or requested fresh)
+    let rows;
+    if (!forceFromState){
+      const text = $("#raw").value.trim();
+      if (!text){
+        status.textContent = "Paste some data first (open the Data input section).";
+        resetUi();
+        return;
+      }
+      const parsed = parseTable(text);
+      if (!parsed.ok){
+        status.textContent = parsed.msg;
+        resetUi();
+        return;
+      }
+      rows = parsed.rows;
+
+      // Fix non-monotonic time by synthesizing dt (capped)
+      const nonmono = rows.some((r,i)=> i>0 && rows[i].t <= rows[i-1].t);
+      if (nonmono){
+        const dt = clamp(averageDt(rows) || 10, 2, 50);
+        rows.forEach((r,i)=> r.t = i*dt);
+      }
+      lastParsed = {rows};
+    }else{
+      rows = lastParsed?.rows || [];
+      if (!rows.length){
+        status.textContent = "No parsed data cached yet. Paste data and click Analyze.";
+        resetUi();
+        return;
+      }
+    }
+
+    const {spans, thresholds} = detectSwings(rows, {minMs, gapMs, quietPct});
+
+    const metricsArr = [];
+    let bestRaw = 0;
+    const rawScore = (mph,g)=> 1.5*mph + 10*g; // Power Number base (independent of bat weight)
+
+    for (const span of spans){
+      const m = estimateMetrics(rows, span, barrelMeters);
+      m.raw = rawScore(m.batSpeed_mph, m.peakG);
+      metricsArr.push(m);
+      if (m.raw > bestRaw) bestRaw = m.raw;
+    }
+
+    if (!spans.length){
+      $("#results").textContent = "No swings detected with auto-thresholds.";
+      setCards({speed:"—", power:"—", force:"—"});
+      status.textContent = `Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s. dt≈${(averageDt(rows)||0).toFixed(1)} ms`;
+      lastMetrics = null;
+      return;
+    }
+
+    const denomRaw = TARGET_UP * (bestRaw || 1);
+
+    // Swing Force normalization uses a fixed reference bat mass
+    const refOz = 16;
+    const refMassKg = refOz * 0.028349523125;
+    const bestSpeedMps = Math.max(...metricsArr.map(m=>m.batSpeed_mps)) || 0.01;
+
+    let bestSpeed=0, bestG=0, bestPower=0, bestForce=0;
+    const out=[];
+    spans.forEach((span, idx)=>{
+      const m = metricsArr[idx];
+
+      const power = clamp(Math.round(100 * m.raw / denomRaw), 0, 100);
+      const forceIdx = clamp(
+        Math.round(100 * ((batMassKg * m.batSpeed_mps) / (TARGET_UP * (refMassKg * bestSpeedMps)))),
+        0, 100
+      );
+
+      bestSpeed = Math.max(bestSpeed, m.batSpeed_mph);
+      bestG     = Math.max(bestG, m.peakG);
+      bestPower = Math.max(bestPower, power);
+      bestForce = Math.max(bestForce, forceIdx);
+
+      const samples = span[1] - span[0] + 1;
+      out.push(
+        `• Swing ${idx+1}  [${m.t0} → ${m.t1}, ${samples} samples]  |  ${m.batSpeed_mph.toFixed(1)} mph  |  gΔ=${m.peakG.toFixed(2)}  |  Power=${power}  |  Force=${forceIdx}`
+      );
+    });
+
+    // Update UI
+    $("#results").textContent = out.join("\n");
+    setCards({speed:bestSpeed.toFixed(1), power:String(bestPower), force:String(bestForce)});
+    status.textContent = `Found ${spans.length} swing(s). Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s. dt≈${(averageDt(rows)||0).toFixed(1)} ms`;
+
+    // cache for quick re-compute on bat weight / target tweaks
+    lastMetrics = {spans, metricsArr, bestRaw, bestSpeedMps};
+
+  } finally {
+    btn.disabled = false;
+    computing = false;
+  }
+}
+
+function resetUi(){
+  setCards({speed:"—", power:"—", force:"—"});
+  $("#results").textContent = "—";
+}
+
+// Big number cards + simple color cue on power
+function setCards({speed, power, force}){
+  $("#m_speed").textContent = speed;
+  $("#m_power").textContent = power;
+  $("#m_force").textContent = force;
+
+  const p = Number(power);
+  const powerCard = $("#card_power");
+  powerCard.classList.remove("ok","warn","bad");
+  if (isFinite(p)){
+    if (p >= 80) powerCard.classList.add("ok");
+    else if (p >= 50) powerCard.classList.add("warn");
+    else powerCard.classList.add("bad");
+  }
+}
+
+// Quick recompute when bat weight or target % changes (if we already parsed)
+// (We don’t re-parse text; we reuse lastParsed + lastMetrics pipeline.)
+function quickRecompute(){
+  if (!lastParsed || !lastMetrics) return;
+  // Re-run analyze but reuse parsed rows
+  analyze(true);
+}
+
+// ---------- listeners ----------
+$("#analyze").addEventListener("click", ()=>analyze(false));
+$("#clear").addEventListener("click", ()=>{
+  $("#raw").value = "";
+  resetUi();
+  $("#status").textContent = "";
+  lastParsed = null;
+  lastMetrics = null;
+});
+
+// Live tweaks
+$("#bat_oz").addEventListener("input", quickRecompute);
+$("#upPct").addEventListener("input", quickRecompute);
+
+// Optional: collapse the data box by default on wide screens
+if (window.matchMedia("(min-width: 900px)").matches){
+  const d = document.getElementById("dataBox");
+  d.open = false;
+}
+</script>
+</body>
+</html>

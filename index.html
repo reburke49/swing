@@ -261,7 +261,7 @@ function estimateMetrics(rows, swing, barrelMeters){
   // kid-friendly score
   // --- New: calibration helpers ---
 const TARGET_UP = 1.15; // 1.10 → 10% stronger; 1.20 → 20% stronger
-const rawScore = (mph, g) => 1.5 * mph + 10 * g; // same blend as before
+const rawScore = (mph, g) => 1.0 * mph + 2 * g; // same blend as before
 
 // ...inside the click handler, BEFORE you render swings:
 const metrics = [];               // collect first, render after we know baseline

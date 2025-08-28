@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bat Swing Analyzer</title>
+<style>
+  :root { --bg:#0b1020; --card:#121a35; --ink:#eef3ff; --muted:#9fb3ff; --accent:#5aa1ff; }
+  html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  header{padding:18px 16px;border-bottom:1px solid #1e2a55;background:linear-gradient(180deg,#0f1730,#0b1020)}
+  h1{margin:0;font-size:20px}
+  main{max-width:1100px;margin:0 auto;padding:16px;display:grid;gap:16px}
+  .row{display:grid;grid-template-columns:1fr; gap:16px}
+  @media(min-width:980px){ .row{grid-template-columns:1.2fr .8fr} }
+  .card{background:var(--card);border:1px solid #1f2a57;border-radius:12px;padding:14px}
+  textarea{width:100%;min-height:280px;border-radius:10px;background:#0e1430;color:var(--ink);border:1px solid #21306a;padding:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  label{display:block;margin:8px 0 4px;color:var(--muted);font-size:13px}
+  input[type="number"],input[type="text"]{width:100%;padding:8px;border-radius:8px;border:1px solid #233268;background:#0e1430;color:var(--ink)}
+  .controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px}
+  .controls > div{min-width:0}
+  button{background:var(--accent);color:#061127;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+  button:hover{filter:brightness(1.05)}
+  .muted{color:var(--muted)}
+  .pill{display:inline-block;background:#1a2858;border:1px solid #26377e;border-radius:999px;padding:2px 8px;margin:2px 6px 2px 0;font-size:12px}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{padding:8px;border-bottom:1px dashed #243166;text-align:left;font-size:14px}
+  .ok{color:#6ee7a7}
+  .warn{color:#ffd479}
+  .bad{color:#ff9c9c}
+  .tiny{font-size:12px}
+  .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Bat Swing Analyzer — WT901 (knob-mounted)</h1>
+  <div class="tiny muted">Paste your raw log → Detect swings → Speed & “Power Points”</div>
+</header>
+
+<main>
+  <div class="row">
+    <div class="card">
+      <label for="raw">Paste raw data (as exported — header row + tab/comma separated rows)</label>
+      <textarea id="raw" placeholder="time	DeviceName	AccX(g)	AccY(g)	AccZ(g)	AsX(°/s)	AsY(°/s)	AsZ(°/s)	..."></textarea>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>Barrel radius from knob (meters)</label>
+          <input id="radius" type="number" step="0.01" value="0.60" />
+          <div class="tiny muted">26&quot; bat → knob to sweet spot ≈ 0.58–0.66 m. Adjust if needed.</div>
+        </div>
+        <div>
+          <label class="muted">
+            <input id="kidmode" type="checkbox" checked />
+            Show kid metric (“Power Points”)
+          </label>
+          <label class="muted">
+            <input id="despike" type="checkbox" checked />
+            Auto de-spike (ignore single-sample outliers)
+          </label>
+          <label class="muted">
+            <input id="autosettings" type="checkbox" checked />
+            Auto-guess thresholds (median + 2.5×std, short-burst)
+          </label>
+        </div>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap">
+        <button id="analyze">Analyze</button>
+        <button id="download">Download CSV summary</button>
+        <span class="muted tiny">Sampling rate is inferred from timestamps.</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="summary"><span class="muted">Results will appear here.</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0">Detected Swings</h3>
+    <div id="swings"></div>
+  </div>
+</main>
+
+<script>
+/* ---------- Utilities ---------- */
+const toRad = d => d * Math.PI / 180;
+const msBetween = (a,b) => Math.abs(new Date(b) - new Date(a));
+function median(arr){ const s=[...arr].sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length? (s.length%2?s[m]:(s[m-1]+s[m])/2):0; }
+function stdev(arr){ const m = arr.reduce((a,b)=>a+b,0) / (arr.length||1); const v = arr.reduce((a,b)=>a+(b-m)*(b-m),0)/(arr.length||1); return Math.sqrt(v); }
+function movingMedian(arr, w=3){
+  if (w<=1) return arr.slice();
+  const half = Math.floor(w/2);
+  const out = arr.map((_,i)=>{
+    const a = Math.max(0,i-half), b = Math.min(arr.length,i+half+1);
+    return median(arr.slice(a,b));
+  });
+  return out;
+}
+function cleanseSpikes(arr, zMax=6){
+  const m = median(arr), sd = stdev(arr);
+  const out = arr.slice();
+  for (let i=0;i<arr.length;i++){
+    if (sd>0 && Math.abs(arr[i]-m)/sd > zMax){
+      // replace with local median of neighbors (window 3)
+      const neighbors = [];
+      if (i>0) neighbors.push(arr[i-1]);
+      if (i<arr.length-1) neighbors.push(arr[i+1]);
+      out[i] = neighbors.length ? median(neighbors) : m;
+    }
+  }
+  return out;
+}
+
+/* ---------- Parser ---------- */
+function parseTable(text){
+  // Accept tabs or commas, tolerate repeated spaces
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return { rows:[], headers:[] };
+  const header = lines[0].split(/\t|,/).map(s=>s.trim());
+  const idx = Object.fromEntries(header.map((h,i)=>[h,i]));
+
+  const reqCols = ["time","AsX(°/s)","AsY(°/s)","AsZ(°/s)"];
+  for (const c of reqCols){
+    if (!(c in idx)) throw new Error(`Missing required column: ${c}`);
+  }
+
+  const rows = [];
+  for (let i=1;i<lines.length;i++){
+    const cols = lines[i].split(/\t|,/);
+    if (cols.length < header.length) continue;
+    rows.push({
+      time: cols[idx["time"]],
+      asx: parseFloat(cols[idx["AsX(°/s)"]]),
+      asy: parseFloat(cols[idx["AsY(°/s)"]]),
+      asz: parseFloat(cols[idx["AsZ(°/s)"]]),
+    });
+  }
+  return { rows, headers: header };
+}
+
+/* ---------- Swing Detection (adaptive, short-burst) ---------- */
+function detectSwings(rows, opts){
+  const times = rows.map(r=>r.time);
+  // infer dt (ms) from median spacing
+  const dts = [];
+  for (let i=1;i<times.length;i++) dts.push(msBetween(times[i-1], times[i]));
+  const dt_ms = dts.length ? median(dts) : 20; // default ~50 Hz
+  const fs = 1000 / dt_ms;
+
+  // gyro magnitude (deg/s)
+  const omgDeg = rows.map(r => Math.hypot(r.asx, r.asy, r.asz));
+
+  // optional de-spike & light smoothing
+  let omg = opts.despike ? cleanseSpikes(omgDeg, 6) : omgDeg.slice();
+  omg = movingMedian(omg, 3);
+
+  // adaptive threshold (median + 2.5*std), no hard floor
+  const base = median(omg);
+  const sd = stdev(omg);
+  const thresh = base + 2.5*sd;
+
+  const minSamples = Math.max(3, Math.round(0.06 * fs)); // ≥ ~60ms
+  const mergeGap = Math.round(0.20 * fs); // merge if <200ms apart
+
+  // flag above threshold
+  const mask = omg.map(v => v > thresh);
+
+  // collect segments
+  const segments = [];
+  let start = null;
+  for (let i=0;i<mask.length;i++){
+    if (mask[i] && start===null) start = i;
+    if ((!mask[i] || i===mask.length-1) && start!==null){
+      const end = mask[i] ? i : i-1;
+      if (end - start + 1 >= minSamples){
+        segments.push([start, end]);
+      }
+      start = null;
+    }
+  }
+
+  // merge close segments
+  const merged = [];
+  for (const seg of segments){
+    if (!merged.length) { merged.push(seg); continue; }
+    const prev = merged[merged.length-1];
+    if (seg[0] - prev[1] <= mergeGap){
+      prev[1] = seg[1];
+    } else {
+      merged.push(seg);
+    }
+  }
+
+  // summarize each swing
+  const swings = merged.map((segi, i) => {
+    const [s,e] = segi;
+    let peakIdx = s, peakVal = -Infinity;
+    for (let k=s;k<=e;k++) if (omg[k] > peakVal){ peakVal = omg[k]; peakIdx = k; }
+    const t0 = times[s], t1 = times[e], tp = times[peakIdx];
+
+    // convert to speed at barrel: ω(rad/s) * R
+    const omega_rad = peakVal * Math.PI / 180;
+    const v_mps = omega_rad * opts.radius_m;
+    const v_mph = v_mps * 2.236936;
+
+    // kid metric: 1 Power Point per mph (rounded), capped at 120 for sanity
+    const points = Math.max(0, Math.min(120, Math.round(v_mph)));
+
+    return {
+      label: `Swing ${i+1}`,
+      startIndex: s, endIndex: e, peakIndex: peakIdx,
+      startTime: t0, endTime: t1, peakTime: tp,
+      peakOmegaDeg: peakVal,
+      speed_mph: v_mph,
+      points
+    };
+  });
+
+  return {
+    fs, dt_ms, thresh, base, sd,
+    omegaDeg: omgDeg, omega: omg, mask, swings
+  };
+}
+
+/* ---------- UI glue ---------- */
+const $ = sel => document.querySelector(sel);
+function fmt(n, d=1){ return Number.isFinite(n) ? n.toFixed(d) : "—"; }
+
+function renderSummary(stats){
+  const { fs, dt_ms, base, sd, thresh, swings } = stats;
+  const cls = swings.length ? "ok" : "warn";
+  $("#summary").innerHTML = `
+    <div><span class="pill ${cls}">${swings.length} swing${swings.length===1?"":"s"} detected</span></div>
+    <div class="tiny muted">Sampling: ~${fmt(fs,1)} Hz (${fmt(dt_ms,0)} ms)</div>
+    <div class="tiny muted">Adaptive threshold: median ${fmt(base,1)} + 2.5×std ${fmt(sd,1)} = <b>${fmt(thresh,1)}°/s</b></div>
+  `;
+}
+
+function renderSwings(stats, radius, kidMode){
+  const box = $("#swings");
+  if (!stats.swings.length){
+    box.innerHTML = `<div class="muted">No swings detected. Try a bigger cut or check if the log includes the full motion window.</div>`;
+    return;
+  }
+  const rows = stats.swings.map(s => `
+    <tr>
+      <td>${s.label}</td>
+      <td>${s.startTime} → ${s.endTime}</td>
+      <td>${fmt(s.peakOmegaDeg,0)}</td>
+      <td>${fmt(s.speed_mph,1)}</td>
+      ${kidMode ? `<td>${s.points}</td>` : ``}
+    </tr>
+  `).join("");
+
+  box.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th><th>Window (start → end)</th><th>Peak |ω| (°/s)</th><th>Est. Barrel Speed (mph)</th>${kidMode?`<th>Power Points</th>`:''}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="tiny muted">Speed uses ω<sub>peak</sub>×radius. Radius set to ${fmt(radius,2)} m.</div>
+  `;
+}
+
+function downloadCSV(swings){
+  if (!swings.length){ alert("No swings to export."); return; }
+  const header = ["label","startTime","endTime","peakTime","peakOmegaDeg","speed_mph","points"];
+  const lines = [header.join(",")].concat(swings.map(s => [
+    s.label, s.startTime, s.endTime, s.peakTime, s.peakOmegaDeg.toFixed(1), s.speed_mph.toFixed(2), s.points
+  ].join(",")));
+  const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "swing_summary.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ---------- Wire up ---------- */
+$("#analyze").addEventListener("click", () => {
+  try{
+    const raw = $("#raw").value;
+    if (!raw.trim()) { alert("Paste your dataset first 🙂"); return; }
+
+    const { rows } = parseTable(raw);
+    if (!rows.length) { alert("Couldn’t parse any rows."); return; }
+
+    const radius_m = parseFloat($("#radius").value) || 0.60;
+    const stats = detectSwings(rows, {
+      radius_m,
+      despike: $("#despike").checked
+    });
+
+    renderSummary(stats);
+    renderSwings(stats, radius_m, $("#kidmode").checked);
+
+    // Save last for export
+    window.__lastStats = stats;
+  }catch(err){
+    console.error(err);
+    alert("Error: " + err.message);
+  }
+});
+
+$("#download").addEventListener("click", () => {
+  const stats = window.__lastStats;
+  if (!stats){ alert("Analyze first to generate results."); return; }
+  downloadCSV(stats.swings);
+});
+</script>
+</body>
+</html>

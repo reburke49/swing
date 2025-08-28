@@ -37,11 +37,11 @@
   /* Metrics */
   .hero{display:grid;grid-template-columns:1fr;gap:10px}
   .gauges{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .gauge-card{position:relative;background:var(--card);border:1px solid #202a56;border-radius:16px;padding:14px;overflow:hidden}
+  .gauge-card{position:relative;background:var(--card);border:1px solid #202a56;border-radius:14px;padding:8px;overflow:hidden}
   .gauge-title{font-size:12px;color:var(--muted);letter-spacing:.3px}
   .gauge-wrap{display:flex;align-items:center;justify-content:center;margin-top:4px}
   .gauge{width:148px;height:88px}
-  .big-num{position:absolute;inset:auto 0 12px 0;text-align:center;font-weight:800;font-size:36px;letter-spacing:.5px}
+  .big-num{position:absolute;inset:auto 0 10px 0;text-align:center;font-weight:900;font-size:clamp(40px, 12vw, 60px);letter-spacing:.5px}
   .units{font-size:12px;color:var(--muted);margin-left:4px}
   .chip-row{display:flex;align-items:center;justify-content:center;margin-top:-2px}
   .chip{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(180deg,#0e1430,#090f23);border:1px solid #223065;border-radius:999px;padding:8px 12px;font-size:12px}
@@ -109,7 +109,7 @@
             </defs>
           </svg>
         </div>
-        <div class="big-num"><span id="m_effort">—</span><span class="units">/100</span></div>
+        <div class="big-num"><span id="m_effort">—</span><span class="units"></span></div>
       </div>
 
       <!-- Swing Force -->
@@ -130,7 +130,7 @@
             </defs>
           </svg>
         </div>
-        <div class="big-num"><span id="m_force">—</span><span class="units">/100</span></div>
+        <div class="big-num"><span id="m_force">—</span><span class="units"></span></div>
       </div>
     </div>
 

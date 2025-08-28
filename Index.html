@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bat Swing Analyzer</title>
+<style>
+  :root { --bg:#0f1220; --fg:#e8ecf1; --muted:#a8b0bd; --accent:#6fd3ff; }
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial;}
+  header{padding:20px; border-bottom:1px solid #1f2438;}
+  h1{margin:0 0 6px;font-size:20px}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-columns: 1fr 340px;gap:20px}
+  textarea{width:100%;min-height:280px;background:#0c0f1b;color:var(--fg);border:1px solid #1f2438;border-radius:8px;padding:12px;resize:vertical}
+  .panel{background:#0c0f1b;border:1px solid #1f2438;border-radius:12px;padding:14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  label{font-size:13px;color:var(--muted)}
+  input[type="number"]{width:110px;background:#0b0e19;color:var(--fg);border:1px solid #28304a;border-radius:6px;padding:6px 8px}
+  button{background:var(--accent);border:0;border-radius:8px;color:#042231;padding:10px 14px;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px}
+  .card{background:#0a0d17;border:1px solid #1a2034;border-radius:10px;padding:10px}
+  .card h3{margin:0 0 6px;font-size:15px;color:#bfe9ff}
+  .card p{margin:4px 0 0;color:var(--muted);font-size:14px}
+  .list{margin-top:14px}
+  .swing{border-top:1px dashed #223; padding-top:10px;margin-top:10px}
+  code{background:#0a0d16;border:1px solid #1a2034;border-radius:6px;padding:2px 6px}
+  .small{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header class="wrap" style="grid-template-columns:1fr;">
+  <div>
+    <h1>Bat Swing Analyzer</h1>
+    <div class="small">Paste your raw WT901 text below (headers included), then click Analyze. Defaults assume a 26" bat and sensor on the knob.</div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <textarea id="raw" placeholder="Paste your data here..."></textarea>
+    <div class="row">
+      <div>
+        <label>Bat length (inches)</label><br/>
+        <input id="batLenIn" type="number" step="0.5" value="26">
+      </div>
+      <div>
+        <label>Barrel radius from knob (inches) <span class="small">(sweet spot distance)</span></label><br/>
+        <input id="barrelIn" type="number" step="0.5" value="20">
+      </div>
+      <div>
+        <label>De-spike gyro? </label><br/>
+        <input id="despike" type="checkbox" checked>
+        <span class="small">(median filter 3)</span>
+      </div>
+      <div style="margin-left:auto">
+        <button id="analyze">Analyze</button>
+      </div>
+    </div>
+    <div id="status" class="small"></div>
+    <div id="results" class="list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="metrics">
+      <div class="card">
+        <h3>Total swings</h3>
+        <p id="m_swings">—</p>
+      </div>
+      <div class="card">
+        <h3>Best bat speed</h3>
+        <p id="m_speed">—</p>
+      </div>
+      <div class="card">
+        <h3>Best g-force</h3>
+        <p id="m_g">—</p>
+      </div>
+      <div class="card">
+        <h3>Power Number</h3>
+        <p id="m_power">—</p>
+      </div>
+    </div>
+    <div class="small" style="margin-top:10px">
+      <b>Power Number</b> = clamp(round( 1.5×batSpeed(mph) + 10×peakG ), 0–100).  
+      Simple, consistent, kid-friendly “how hard did I swing?” score.
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================
+   Helpers & parsing
+========================= */
+
+// FIX #1 — robust timestamp parser
+function parseLooseTimestamp(s) {
+  s = String(s).trim();
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})(?:\.(\d{1,3}))?$/);
+  if (!m) return NaN;
+  let [_, Y, Mo, D, H, Mi, S, frac] = m;
+  Y=+Y; Mo=+Mo; D=+D; H=+H; Mi=+Mi; S=+S;
+  let ms = 0;
+  if (frac !== undefined) {
+    if (frac.length === 1) ms = +frac * 100;     // .9  -> 900 ms
+    else if (frac.length === 2) ms = +frac * 10; // .39 -> 390 ms
+    else ms = +frac;                              // .349 -> 349 ms
+  }
+  return Date.UTC(Y, Mo - 1, D, H, Mi, S, ms);
+}
+
+// FIX #2 — msBetween uses the robust parser
+const msBetween = (a, b) => {
+  const ta = parseLooseTimestamp(a), tb = parseLooseTimestamp(b);
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return NaN;
+  return Math.abs(tb - ta);
+};
+
+function median(arr){
+  if (!arr.length) return NaN;
+  const a = [...arr].sort((x,y)=>x-y);
+  const i = Math.floor(a.length/2);
+  return a.length%2 ? a[i] : 0.5*(a[i-1]+a[i]);
+}
+function rms(arr){ if(!arr.length) return 0; let s=0; for(const v of arr) s+=v*v; return Math.sqrt(s/arr.length); }
+function movingMedian3(x){
+  if (x.length<3) return x.slice();
+  const y = x.slice();
+  for (let i=1;i<x.length-1;i++){
+    const a=[x[i-1],x[i],x[i+1]].sort((p,q)=>p-q);
+    y[i]=a[1];
+  }
+  return y;
+}
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+// Parse TSV/CSV/space-delimited
+function parseTable(text){
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
+  const header = lines[0].split(/\t|,|;|\s{2,}/).map(h=>h.trim());
+  const rows=[];
+  for (let i=1;i<lines.length;i++){
+    const cols = lines[i].split(/\t|,|;|\s{2,}/);
+    if (cols.length < header.length) continue;
+    const obj={};
+    header.forEach((h,idx)=>{
+      obj[h] = cols[idx];
+    });
+    // map common field aliases
+    const time = obj.time || obj.Time || obj.TIMESTAMP || obj.Timestamp;
+    const ax = +(obj["AccX(g)"] ?? obj.ax ?? obj.AccX ?? obj.AccX_g);
+    const ay = +(obj["AccY(g)"] ?? obj.ay ?? obj.AccY ?? obj.AccY_g);
+    const az = +(obj["AccZ(g)"] ?? obj.az ?? obj.AccZ ?? obj.AccZ_g);
+    const gx = +(obj["AsX(°/s)"] ?? obj.gx ?? obj.GyroX ?? obj.AsX);
+    const gy = +(obj["AsY(°/s)"] ?? obj.gy ?? obj.GyroY ?? obj.AsY);
+    const gz = +(obj["AsZ(°/s)"] ?? obj.gz ?? obj.GyroZ ?? obj.AsZ);
+    if (!time) continue;
+    rows.push({ time, ax, ay, az, gx, gy, gz });
+  }
+  return rows;
+}
+
+/* =========================
+   Swing detection
+========================= */
+
+// Auto-thresholds from quiet baseline
+function autoThresholds(rows, fs){
+  // use first quarter as baseline (fallback: all rows)
+  const n = rows.length;
+  const baseN = Math.max(20, Math.floor(n/4));
+  const gx = rows.slice(0, baseN).map(r=>r.gx);
+  const gy = rows.slice(0, baseN).map(r=>r.gy);
+  const gz = rows.slice(0, baseN).map(r=>r.gz);
+  const ax = rows.slice(0, baseN).map(r=>r.ax);
+  const ay = rows.slice(0, baseN).map(r=>r.ay);
+  const az = rows.slice(0, baseN).map(r=>r.az);
+
+  const gyroNoise = Math.max(20, median([rms(gx),rms(gy),rms(gz)])); // °/s
+  const accNoise  = Math.max(0.03, median([rms(ax),rms(ay),rms(az)])); // g
+
+  // thresholds: a bit above noise; also cap minimums
+  const gyroStart = Math.max(gyroNoise*2.2, 80);   // start if > this
+  const gyroStop  = Math.max(gyroNoise*1.2, 40);   // stop when < this
+  const accSpike  = Math.max(accNoise*4.0, 0.4);   // rarely used; extra cue
+
+  return { gyroStart, gyroStop, accSpike };
+}
+
+// FIX #3 — robust fs inference + fallback
+function inferFs(rows){
+  const times = rows.map(r=>r.time);
+  const deltas = [];
+  for (let i=1;i<times.length;i++){
+    const d = msBetween(times[i-1], times[i]);
+    if (Number.isFinite(d) && d>0 && d<2000) deltas.push(d);
+  }
+  let dt_ms = deltas.length ? median(deltas) : 20; // fallback ~50 Hz
+  if (!Number.isFinite(dt_ms) || dt_ms <= 0) dt_ms = 20;
+  let fs = 1000 / dt_ms;
+  if (!Number.isFinite(fs) || fs <= 0) fs = 50;
+  return { fs, dt_ms };
+}
+
+function detectSwings(rows, opts={}){
+  if (rows.length < 5) return { swings:[], fs:50, dt_ms:20, thresholds:null };
+
+  const {fs, dt_ms} = inferFs(rows);
+  const thr = autoThresholds(rows, fs);
+
+  // Lower minimum swing duration: max(3 samples, ~40 ms)
+  const minDurSamples = Math.max(3, Math.round(0.04*fs));
+
+  // Build signals
+  const gxm = opts.despike ? movingMedian3(rows.map(r=>r.gx)) : rows.map(r=>r.gx);
+  const gym = opts.despike ? movingMedian3(rows.map(r=>r.gy)) : rows.map(r=>r.gy);
+  const gzm = opts.despike ? movingMedian3(rows.map(r=>r.gz)) : rows.map(r=>r.gz);
+  const gyroMag = gxm.map((_,i)=>Math.hypot(gxm[i], gym[i], gzm[i])); // °/s
+
+  // Simple Hysteresis FSM
+  let swings=[], inSwing=false, start=0;
+  for (let i=0;i<gyroMag.length;i++){
+    const g = gyroMag[i];
+    if (!inSwing && g > thr.gyroStart){
+      inSwing = true; start = i;
+    } else if (inSwing && g < thr.gyroStop){
+      const len = i - start + 1;
+      if (len >= minDurSamples) {
+        swings.push({ i0:start, i1:i });
+      }
+      inSwing = false;
+    }
+  }
+  // tail close
+  if (inSwing){
+    const len = gyroMag.length - start;
+    if (len >= minDurSamples) swings.push({ i0:start, i1:gyroMag.length-1 });
+  }
+
+  return { swings, fs, dt_ms, thresholds: thr, gyroMag };
+}
+
+/* =========================
+   Metrics
+========================= */
+
+function estimateMetrics(rows, swing, barrelMeters){
+  const g = rows.slice(swing.i0, swing.i1+1);
+  // peak linear accel (net g minus 1g bias)
+  const peakG = g.reduce((m,r)=>{
+    const a = Math.hypot(r.ax, r.ay, r.az);
+    const dyn = Math.max(0, a - 1.0); // remove gravity magnitude
+    return Math.max(m, dyn);
+  }, 0);
+
+  // peak angular speed -> bat speed
+  const peakDegPerS = g.reduce((m,r)=>Math.max(m, Math.hypot(r.gx,r.gy,r.gz)),0);
+  const peakRadPerS = peakDegPerS * (Math.PI/180);
+  const batSpeed_ms = peakRadPerS * barrelMeters;
+  const batSpeed_mph = batSpeed_ms * 2.2369363;
+
+  // kid-friendly score
+  const power = clamp(Math.round(1.5*batSpeed_mph + 10*peakG), 0, 100);
+
+  // timestamps
+  const t0 = rows[swing.i0].time;
+  const t1 = rows[swing.i1].time;
+
+  return { peakG, peakDegPerS, peakRadPerS, batSpeed_ms, batSpeed_mph, power, t0, t1 };
+}
+
+/* =========================
+   UI wiring
+========================= */
+
+const $ = sel => document.querySelector(sel);
+
+$("#analyze").addEventListener("click", ()=>{
+  const text = $("#raw").value.trim();
+  if (!text) { $("#status").textContent="Paste data first."; return; }
+
+  $("#status").textContent = "Parsing…";
+  const rows = parseTable(text);
+
+  if (!rows.length){
+    $("#status").textContent = "Couldn’t read any rows—check the header line and delimiters.";
+    return;
+  }
+
+  const opts = { despike: $("#despike").checked };
+  const det = detectSwings(rows, opts);
+  const swings = det.swings;
+
+  const batLenIn = parseFloat($("#batLenIn").value)||26;
+  const barrelIn = parseFloat($("#barrelIn").value)||20;
+  const barrelMeters = barrelIn * 0.0254; // inches -> meters
+
+  $("#m_swings").textContent = swings.length.toString();
+
+  const out = [];
+  let bestSpeed = 0, bestG = 0, bestPower = 0;
+
+  if (!swings.length){
+    $("#status").textContent = `No swings detected. (fs≈${det.fs.toFixed(1)} Hz; thresholds: start>${Math.round(det.thresholds.gyroStart)}°/s stop<${Math.round(det.thresholds.gyroStop)}°/s)`;
+  } else {
+    $("#status").textContent = `Detected ${swings.length} swing(s). fs≈${det.fs.toFixed(1)} Hz (dt≈${det.dt_ms.toFixed(1)} ms).`;
+  }
+
+  swings.forEach((sw, idx)=>{
+    const m = estimateMetrics(rows, sw, barrelMeters);
+    bestSpeed = Math.max(bestSpeed, m.batSpeed_mph);
+    bestG = Math.max(bestG, m.peakG);
+    bestPower = Math.max(bestPower, m.power);
+
+    out.push(`
+      <div class="swing">
+        <div><b>Swing ${idx+1}</b> <span class="small">(${m.t0} → ${m.t1})</span></div>
+        <div class="small">Samples: ${sw.i1 - sw.i0 + 1}</div>
+        <div>Peak bat speed: <b>${m.batSpeed_mph.toFixed(1)} mph</b> <span class="small">(radius ${barrelIn}" from knob)</span></div>
+        <div>Peak g-force (dyn): <b>${m.peakG.toFixed(2)} g</b></div>
+        <div>Peak angular speed: <b>${m.peakDegPerS.toFixed(0)} °/s</b> <span class="small">(${m.peakRadPerS.toFixed(2)} rad/s)</span></div>
+        <div>Power Number: <b>${m.power}</b> <span class="small">(0–100)</span></div>
+      </div>
+    `);
+  });
+
+  $("#results").innerHTML = out.join("") || `<div class="small">No swings to list.</div>`;
+  $("#m_speed").textContent = bestSpeed ? `${bestSpeed.toFixed(1)} mph` : "—";
+  $("#m_g").textContent = bestG ? `${bestG.toFixed(2)} g` : "—";
+  $("#m_power").textContent = bestPower ? `${bestPower}` : "—";
+});
+</script>
+</body>
+</html>

@@ -68,7 +68,8 @@
     <div class="row" style="margin-top:8px">
       <div class="rangebox">
         <label>“100” set at <span id="upLabel">15%</span> stronger than best</label>
-        <input id="upPct" type="range" min="10" max="20" value="15" oninput="upLabel.textContent=this.value+'%';"/>
+        <input id="upPct" type="range" min="10" max="20" value="15"
+       oninput="document.getElementById('upLabel').textContent=this.value+'%';"/>
       </div>
       <button id="analyze">Analyze</button>
       <button id="clear" class="secondary">Clear</button>
@@ -428,3 +429,5 @@ $("#clear").addEventListener("click", ()=>{
   $("#status").textContent = "";
 });
 </script>
+</body>
+</html>

@@ -353,9 +353,6 @@ function analyze(){
     rows.forEach((r,i)=> r.t = i*dt);
   }
 
-  const denomRaw = TARGET_UP * (bestRaw || 1);
-  const power = clamp(Math.round(100 * m.raw / denomRaw), 0, 100);
-
   const {spans, thresholds} = detectSwings(rows, {minMs, gapMs, quietPct});
 
   const metrics = [];
@@ -368,6 +365,8 @@ function analyze(){
     metrics.push(m);
     if (m.raw > bestRaw) bestRaw = m.raw;
   }
+  const denomRaw = TARGET_UP * (bestRaw || 1);
+
 
   if (!spans.length){
     $("#results").innerHTML = `<div>No swings detected with auto-thresholds.<br/>
@@ -394,7 +393,8 @@ function analyze(){
     const m = metrics[idx];
 
     // Power Number: independent of bat weight
-    const power = clamp(Math.round(100 * m.raw / (TARGET_UP * bestRaw)), 0, 100);
+    const power = clamp(Math.round(100 * m.raw / denomRaw), 0, 100);
+
 
     // Swing Force: scaled by current bat mass vs reference mass
     const forceIdx = clamp(

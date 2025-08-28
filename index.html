@@ -326,50 +326,63 @@ function analyze(){
   const TARGET_UP = 1 + (Number($("#upPct").value)||15)/100;
 
   const rows = parseTable(text);
-  if (rows.length < 5){ $("#status").innerHTML = '<span class="bad">Could not parse rows. Make sure the first line is a header.</span>'; return; }
+  if (rows.length < 5){
+    $("#status").innerHTML = '<span class="bad">Could not parse rows. Make sure the first line is a header.</span>';
+    return;
+  }
 
-  // Guardrail (Small Exit #3): if time is non-monotonic, rebuild uniform
+  // Guardrail: fix non-monotonic time by synthesizing dt
   const nonmono = rows.some((r,i)=> i>0 && rows[i].t <= rows[i-1].t);
   if (nonmono){
-    const dt = 10;
+    const dt = 10; // ms fallback
     rows.forEach((r,i)=> r.t = i*dt);
   }
 
   const {spans, thresholds} = detectSwings(rows, {minMs, gapMs, quietPct});
 
-  const swings = spans;
   const metrics = [];
   let bestRaw = 0;
-  let bestMomentum = 0;
+  const rawScore = (mph,g)=> 1.5*mph + 10*g; // Power Number base
 
-  const rawScore = (mph,g)=> 1.5*mph + 10*g;
-
-  for (const span of swings){
+  for (const span of spans){
     const m = estimateMetrics(rows, span, barrelMeters);
     m.raw = rawScore(m.batSpeed_mph, m.peakG);
-    m.momentum = batMassKg * m.batSpeed_mps; // N·s (kg·m/s)
     metrics.push(m);
     if (m.raw > bestRaw) bestRaw = m.raw;
-    if (m.momentum > bestMomentum) bestMomentum = m.momentum;
   }
 
-  if (!swings.length){
+  if (!spans.length){
     $("#results").innerHTML = `<div>No swings detected with auto-thresholds.<br/>
       <div class="hint">Try: lower <b>Min swing duration</b>, increase <b>Gap bridge</b>, or raise <b>Noise floor cut</b> to 40–50%.</div>
     </div>`;
-    $("#m_speed").textContent = "—"; $("#m_g").textContent="—"; $("#m_power").textContent="—"; $("#m_force").textContent="—";
+    $("#m_speed").textContent = "—";
+    $("#m_g").textContent="—";
+    $("#m_power").textContent="—";
+    $("#m_force").textContent="—";
     $("#status").innerHTML = `
       <div>Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s.
       <br><span class="small">Base=${thresholds.base.toFixed(1)}, σ≈${thresholds.sigma.toFixed(1)} | dt≈${(averageDt(rows)||0).toFixed(1)}ms</span></div>`;
     return;
   }
 
+  // Swing Force normalization uses a fixed reference bat mass
+  const refOz = 16;
+  const refMassKg = refOz * 0.028349523125;
+  const bestSpeedMps = Math.max(...metrics.map(m=>m.batSpeed_mps)) || 0.01;
+
   let bestSpeed=0, bestG=0, bestPower=0, bestForce=0;
   const out=[];
-  swings.forEach((span, idx)=>{
+  spans.forEach((span, idx)=>{
     const m = metrics[idx];
+
+    // Power Number: independent of bat weight
     const power = clamp(Math.round(100 * m.raw / (TARGET_UP * bestRaw)), 0, 100);
-    const forceIdx = bestMomentum>0 ? clamp(Math.round(100 * m.momentum / (TARGET_UP * bestMomentum)), 0, 100) : 0;
+
+    // Swing Force: scaled by current bat mass vs reference mass
+    const forceIdx = clamp(
+      Math.round(100 * ((batMassKg * m.batSpeed_mps) / (TARGET_UP * (refMassKg * bestSpeedMps)))),
+      0, 100
+    );
 
     bestSpeed = Math.max(bestSpeed, m.batSpeed_mph);
     bestG     = Math.max(bestG, m.peakG);
@@ -384,8 +397,8 @@ function analyze(){
         <div><b>Swing ${idx+1}</b> <span class="small">(${m.t0} → ${m.t1}, ${samples} samples)</span></div>
         <div>Peak bat speed: <b>${m.batSpeed_mph.toFixed(1)} mph</b></div>
         <div>Peak g-force (dynamic): <b>${m.peakG.toFixed(2)} g</b></div>
-        <div>Power Number: <b>${power}</b> <span class="small">(100 ≈ ${Math.round((TARGET_UP-1)*100)}% stronger than the best in this file)</span></div>
-        <div>Swing Force: <b>${forceIdx}</b> <span class="small">(momentum index; heavier bat × speed)</span></div>
+        <div>Power Number: <b>${power}</b> <span class="small">(100 ≈ ${(Math.round((TARGET_UP-1)*100))}% stronger than best in file)</span></div>
+        <div>Swing Force: <b>${forceIdx}</b> <span class="small">(scaled vs. best speed @ ${refOz} oz)</span></div>
       </div>
     `);
   });
@@ -397,12 +410,13 @@ function analyze(){
   $("#m_force").textContent = String(bestForce);
   $("#status").innerHTML = `
     <div class="small">
-      Found <b>${swings.length}</b> swing(s).
+      Found <b>${spans.length}</b> swing(s).
       Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s.
       dt≈${(averageDt(rows)||0).toFixed(1)} ms
     </div>`;
 }
 
+// ✅ keep listeners inside the same script block
 $("#analyze").addEventListener("click", analyze);
 $("#clear").addEventListener("click", ()=>{
   $("#raw").value = "";
@@ -414,5 +428,3 @@ $("#clear").addEventListener("click", ()=>{
   $("#status").textContent = "";
 });
 </script>
-</body>
-</html>

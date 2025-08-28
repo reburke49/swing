@@ -349,9 +349,12 @@ function analyze(){
   // Guardrail: fix non-monotonic time by synthesizing dt
   const nonmono = rows.some((r,i)=> i>0 && rows[i].t <= rows[i-1].t);
   if (nonmono){
-    const dt = 10; // ms fallback
+    const dt = averageDt(rows) || 10;
     rows.forEach((r,i)=> r.t = i*dt);
   }
+
+  const denomRaw = TARGET_UP * (bestRaw || 1);
+  const power = clamp(Math.round(100 * m.raw / denomRaw), 0, 100);
 
   const {spans, thresholds} = detectSwings(rows, {minMs, gapMs, quietPct});
 

@@ -101,9 +101,29 @@
     </div>
   </section>
 
-  <!-- Primary controls -->
-  <section class="panel">
-    <div class="row half">
+ <!-- Primary controls (kept simple & always visible) -->
+<section class="panel">
+  <div class="row" style="margin-top:4px">
+    <div style="flex:1">
+      <label>“100” set at <span id="upLabel">15%</span> stronger than best</label>
+      <input id="upPct" type="range" min="10" max="20" value="15"
+             oninput="document.getElementById('upLabel').textContent=this.value+'%';">
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:10px">
+    <button id="analyze">Analyze</button>
+    <button id="clear" class="secondary">Clear</button>
+  </div>
+  <div id="status" class="hint" style="margin-top:8px"></div>
+</section>
+
+<!-- Collapsible: rarely changed inputs -->
+<section class="panel">
+  <details>
+    <summary><span class="sumline">Input settings (rarely changed)</span></summary>
+
+    <div class="row stack" style="margin-top:10px">
       <div>
         <label>Barrel distance from knob (m)</label>
         <input id="barrel_m" type="number" step="0.01" value="0.58"
@@ -113,44 +133,21 @@
         <label>Bat weight (oz)</label>
         <input id="bat_oz" type="number" step="1" value="16" title="Total bat weight in ounces.">
       </div>
-    </div>
-
-    <div class="row" style="margin-top:8px">
-      <div style="flex:1">
-        <label>“100” set at <span id="upLabel">15%</span> stronger than best</label>
-        <input id="upPct" type="range" min="10" max="20" value="15"
-               oninput="document.getElementById('upLabel').textContent=this.value+'%';">
+      <div>
+        <label>Min swing duration (ms)</label>
+        <input id="min_ms" type="number" step="10" value="60">
+      </div>
+      <div>
+        <label>Gap bridge (ms)</label>
+        <input id="gap_ms" type="number" step="5" value="40">
+      </div>
+      <div>
+        <label>Noise floor cut (lowest %)</label>
+        <input id="quiet_pct" type="number" step="5" value="30">
       </div>
     </div>
-
-    <div class="actions" style="margin-top:10px">
-      <button id="analyze">Analyze</button>
-      <button id="clear" class="secondary">Clear</button>
-    </div>
-    <div id="status" class="hint" style="margin-top:8px"></div>
-  </section>
-
-  <!-- Advanced settings -->
-  <section class="panel">
-    <details>
-      <summary><span class="sumline">Advanced settings</span></summary>
-      <div class="row stack" style="margin-top:10px">
-        <div>
-          <label>Min swing duration (ms)</label>
-          <!-- mobile-first default a bit lower as requested earlier -->
-          <input id="min_ms" type="number" step="10" value="60">
-        </div>
-        <div>
-          <label>Gap bridge (ms)</label>
-          <input id="gap_ms" type="number" step="5" value="40">
-        </div>
-        <div>
-          <label>Noise floor cut (lowest %)</label>
-          <input id="quiet_pct" type="number" step="5" value="30">
-        </div>
-      </div>
-    </details>
-  </section>
+  </details>
+</section>
 
   <!-- Paste box (collapsed by default on mobile) -->
   <section class="panel">

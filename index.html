@@ -115,12 +115,26 @@
 const $ = sel => document.querySelector(sel);
 
 function parseTS(t){
-  const d = new Date(t.replace(/\./g,':')); // tolerate 18:13:17.39
-  if (!isNaN(d)) return d.getTime();
-  const num = Number(t);
-  if (isFinite(num)){
-    return num < 3e10 ? Math.round(num*1000) : Math.round(num);
+  // Try to match "YYYY-M-D HH:MM:SS.m[mm]" with flexible widths
+  const m = String(t).trim().match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/
+  );
+  if (m){
+    const [_, Y, Mo, D, H, Mi, S, msRaw] = m;
+    const ms = (msRaw ?? "0").padStart(3,"0");
+    const iso = `${Y.padStart(4,"0")}-${Mo.padStart(2,"0")}-${D.padStart(2,"0")}T${H}:${Mi}:${S}.${ms}Z`;
+    const d = new Date(iso);
+    if (!isNaN(d)) return d.getTime();
   }
+
+  // Fallback: let Date try whatever format this is
+  const d2 = new Date(t);
+  if (!isNaN(d2)) return d2.getTime();
+
+  // Numeric seconds / millis fallback
+  const num = Number(t);
+  if (isFinite(num)) return num < 3e10 ? Math.round(num*1000) : Math.round(num);
+
   return NaN;
 }
 

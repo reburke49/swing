@@ -259,7 +259,43 @@ function estimateMetrics(rows, swing, barrelMeters){
   const batSpeed_mph = batSpeed_ms * 2.2369363;
 
   // kid-friendly score
-  const power = clamp(Math.round(1.5*batSpeed_mph + 10*peakG), 0, 100);
+  // --- New: calibration helpers ---
+const TARGET_UP = 1.15; // 1.10 → 10% stronger; 1.20 → 20% stronger
+const rawScore = (mph, g) => 1.5 * mph + 10 * g; // same blend as before
+
+// ...inside the click handler, BEFORE you render swings:
+const metrics = [];               // collect first, render after we know baseline
+let bestRaw = 0;
+swings.forEach((sw, idx)=>{
+  const m = estimateMetrics(rows, sw, barrelMeters);
+  m.raw = rawScore(m.batSpeed_mph, m.peakG);
+  metrics.push(m);
+  if (m.raw > bestRaw) bestRaw = m.raw;
+});
+
+// Now that we have bestRaw, compute calibrated power and render:
+let bestSpeed = 0, bestG = 0, bestPower = 0;
+const out = metrics.map((m, idx) => {
+  const power = clamp(Math.round(100 * m.raw / (TARGET_UP * bestRaw)), 0, 100);
+  bestSpeed = Math.max(bestSpeed, m.batSpeed_mph);
+  bestG     = Math.max(bestG, m.peakG);
+  bestPower = Math.max(bestPower, power);
+
+  return `
+    <div class="swing">
+      <div><b>Swing ${idx+1}</b> <span class="small">(${m.t0} → ${m.t1})</span></div>
+      <div class="small">Samples: ${rows.indexOf(rows.find(r=>r.time===m.t1)) - rows.indexOf(rows.find(r=>r.time===m.t0)) + 1}</div>
+      <div>Peak bat speed: <b>${m.batSpeed_mph.toFixed(1)} mph</b></div>
+      <div>Peak g-force (dyn): <b>${m.peakG.toFixed(2)} g</b></div>
+      <div>Peak angular speed: <b>${m.peakDegPerS.toFixed(0)} °/s</b> <span class="small">(${m.peakRadPerS.toFixed(2)} rad/s)</span></div>
+      <div>Power Number: <b>${power}</b> <span class="small">(0–100; 100 ≈ ${Math.round((TARGET_UP-1)*100)}% stronger than best in file)</span></div>
+    </div>
+  `;
+});
+$("#results").innerHTML = out.join("") || `<div class="small">No swings to list.</div>`;
+$("#m_speed").textContent = bestSpeed ? `${bestSpeed.toFixed(1)} mph` : "—";
+$("#m_g").textContent     = bestG ? `${bestG.toFixed(2)} g` : "—";
+$("#m_power").textContent = bestPower ? `${bestPower}` : "—";
 
   // timestamps
   const t0 = rows[swing.i0].time;

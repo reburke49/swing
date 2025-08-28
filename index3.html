@@ -2,194 +2,210 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Bat Swing Analyzer (WT901)</title>
 <style>
   :root{
-    --bg:#0b1020; --panel:#121833; --ink:#eef2ff; --muted:#9fb0e6; --accent:#6ea8fe;
-    --good:#71f0a8; --warn:#ffd66e; --bad:#ff7a7a; --border:#1c2447; --ink-dim:#cfd7ff;
+    --bg:#0b1020; --panel:#121833; --ink:#eef2ff; --muted:#a7b3e3; --accent:#6ea8fe;
+    --good:#71f0a8; --warn:#ffd66e; --bad:#ff7a7a; --line:#1d2750;
+    --card:#0f1733; --chip:#0a1028;
   }
+  html,body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0}
+  header{padding:14px 16px;border-bottom:1px solid #1a2244;background:linear-gradient(180deg,#0f1630,#0b1020)}
+  h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.2px}
 
-  /* Mobile-first base */
-  html,body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;margin:0}
-  header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,#0f1630,#0b1020);border-bottom:1px solid var(--border);padding:12px 16px}
-  h1{margin:0;font-size:18px;letter-spacing:.2px}
-  main{display:flex;flex-direction:column;gap:12px;padding:12px}
-
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:12px}
+  /* Layout: mobile-first column; widens on large screens */
+  main{display:flex;flex-direction:column;gap:12px;padding:12px;max-width:980px;margin:0 auto}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
   .hint{color:var(--muted);font-size:12px}
-  .row{display:flex;gap:8px;flex-wrap:wrap}
-  .row.stack > *{flex:1 1 160px}
-
-  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
-  input[type="number"], input[type="text"]{
-    width:100%;background:#0a0f22;border:1px solid #1d2750;border-radius:10px;
-    color:var(--ink);padding:10px 12px;font-size:16px
-  }
-  input[type="range"]{width:100%}
-
-  button{
-    width:100%;background:var(--accent);border:0;color:#021027;padding:12px 14px;
-    border-radius:12px;font-weight:700;font-size:16px;cursor:pointer
-  }
+  .actions{display:flex;gap:8px}
+  button{background:var(--accent);border:0;color:#021027;padding:10px 14px;border-radius:12px;font-weight:700;cursor:pointer}
   button.secondary{background:#26305e;color:var(--ink)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  input[type="number"],input[type="text"]{background:#0a0f22;border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:10px;min-width:110px}
+  input[type="range"]{width:100%}
+  details{border:1px solid var(--line);border-radius:12px;background:#0d1430;padding:0}
+  details > summary{list-style:none;padding:12px 14px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:8px}
+  details > summary::marker{display:none}
+  details[open] > summary{border-bottom:1px solid var(--line)}
+  .sumline::before{content:"▸";display:inline-block;transform:rotate(0deg);transition:transform .25s ease}
+  details[open] .sumline::before{transform:rotate(90deg)}
+  .stack{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
+  .stack > div{min-width:0}
+  textarea{width:100%;min-height:160px;background:#0a0f22;border:1px solid var(--line);border-radius:12px;color:var(--ink);padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
-  /* Metrics hero */
-  .metrics{
-    display:grid;gap:10px;
-    grid-template-columns:1fr; /* mobile */
-  }
-  .metric{
-    background:#0f1733;border:1px solid #202a56;border-radius:16px;padding:14px 14px 16px
-  }
-  .metric .label{color:var(--ink-dim);font-size:12px;margin-bottom:6px}
-  .metric .big{
-    line-height:1.05;font-weight:800;
-    /* Fluid size: 34px on small phones → 64px on large screens */
-    font-size:clamp(34px, 12vw, 64px);
-    letter-spacing:.5px
-  }
-  .metric .unit{font-size:14px;color:var(--ink-dim);margin-left:6px}
+  /* Metrics */
+  .hero{display:grid;grid-template-columns:1fr;gap:10px}
+  .gauges{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .gauge-card{position:relative;background:var(--card);border:1px solid #202a56;border-radius:16px;padding:14px;overflow:hidden}
+  .gauge-title{font-size:12px;color:var(--muted);letter-spacing:.3px}
+  .gauge-wrap{display:flex;align-items:center;justify-content:center;margin-top:4px}
+  .gauge{width:148px;height:88px}
+  .big-num{position:absolute;inset:auto 0 12px 0;text-align:center;font-weight:800;font-size:36px;letter-spacing:.5px}
+  .units{font-size:12px;color:var(--muted);margin-left:4px}
+  .chip-row{display:flex;align-items:center;justify-content:center;margin-top:-2px}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(180deg,#0e1430,#090f23);border:1px solid #223065;border-radius:999px;padding:8px 12px;font-size:12px}
+  .chip b{font-size:16px}
 
-  /* Detected swings list */
-  .swing{padding:12px 0;border-bottom:1px dashed #273162}
+  /* Results list */
+  .list{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+  .swing{padding:10px 4px;border-bottom:1px dashed #273162}
   .swing:last-child{border-bottom:0}
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  a{color:#9cc3ff}
 
-  /* Details / collapsibles */
-  details{border:1px solid var(--border);border-radius:12px;background:#0c1230;padding:8px 10px}
-  summary{cursor:pointer;list-style:none}
-  summary::-webkit-details-marker{display:none}
-  summary .sumline{display:flex;align-items:center;gap:8px;font-weight:600}
-  textarea{
-    width:100%;min-height:96px;margin-top:8px;background:#0a0f22;border:1px solid #1d2750;
-    border-radius:12px;color:var(--ink);padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace
+  /* Wider screens: give more room to gauges */
+  @media(min-width:860px){
+    main{padding:16px 16px 20px}
+    .hero{grid-template-columns:1fr 1fr}
+    .stack{grid-template-columns:repeat(5, minmax(140px,1fr))}
   }
 
-  /* Status bar */
-  #status{color:var(--muted);font-size:12px}
-
-  /* Larger screens */
-  @media (min-width:700px){
-    .metrics{grid-template-columns:repeat(3,1fr)}
-    .row.half > *{flex:1 1 220px}
-    .actions{display:flex;gap:8px}
-    .actions button{width:auto;min-width:140px}
-  }
-  @media (min-width:1100px){
-    main{max-width:1100px;margin:0 auto;padding:16px}
+  /* Motion accessibility */
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none !important;animation:none !important}
   }
 </style>
 </head>
 <body>
-<header><h1>Bat Swing Analyzer – WT901</h1></header>
+<header><h1>Bat Swing Analyzer – WT901 (knob-mount)</h1></header>
 
 <main>
-  <!-- Big, primary metrics -->
-  <section class="metrics">
-    <div class="metric" aria-live="polite">
-      <div class="label">Swing Speed</div>
-      <div><span id="m_speed" class="big">—</span><span class="unit">mph</span></div>
-    </div>
-    <div class="metric" aria-live="polite">
-      <div class="label">Power Number</div>
-      <div><span id="m_power" class="big">—</span><span class="unit">0–100</span></div>
-    </div>
-    <div class="metric" aria-live="polite">
-      <div class="label">Swing Force</div>
-      <div><span id="m_force" class="big">—</span><span class="unit">0–100</span></div>
-    </div>
-  </section>
 
- <!-- Primary controls (always visible) -->
-<section class="panel">
-  <div class="row" style="margin-top:4px">
-    <div style="flex:1">
+  <!-- Primary: calibration + actions -->
+  <section class="panel">
+    <div>
       <label>“100” set at <span id="upLabel">15%</span> stronger than best</label>
       <input id="upPct" type="range" min="10" max="20" value="15"
              oninput="document.getElementById('upLabel').textContent=this.value+'%';">
     </div>
-  </div>
+    <div class="actions" style="margin-top:10px">
+      <button id="analyze">Analyze</button>
+      <button id="clear" class="secondary">Clear</button>
+    </div>
+    <div id="status" class="hint" style="margin-top:8px"></div>
+  </section>
 
-  <div class="actions" style="margin-top:10px">
-    <button id="analyze">Analyze</button>
-    <button id="clear" class="secondary">Clear</button>
-  </div>
-  <div id="status" class="hint" style="margin-top:8px"></div>
-</section>
+  <!-- HERO METRICS -->
+  <section class="hero">
+    <div class="gauges">
+      <!-- Swing Effort -->
+      <div class="gauge-card">
+        <div class="gauge-title">Swing Effort</div>
+        <div class="gauge-wrap">
+          <svg class="gauge" viewBox="0 0 200 120" aria-hidden="true">
+            <!-- Track -->
+            <path d="M20,110 A90,90 0 0 1 180,110"
+                  fill="none" stroke="#1f2a57" stroke-width="16" stroke-linecap="round"/>
+            <!-- Progress -->
+            <path id="gEffort" d="M20,110 A90,90 0 0 1 180,110"
+                  fill="none" stroke="url(#gradEffort)" stroke-width="16" stroke-linecap="round"
+                  stroke-dasharray="283" stroke-dashoffset="283" />
+            <defs>
+              <linearGradient id="gradEffort" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#6ea8fe"/>
+                <stop offset="100%" stop-color="#71f0a8"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="big-num"><span id="m_effort">—</span><span class="units">/100</span></div>
+      </div>
 
-<!-- Collapsible: all rarely changed inputs -->
-<section class="panel">
-  <details>
-    <summary><span class="sumline">Advanced settings</span></summary>
-
-    <div class="row stack" style="margin-top:10px">
-      <div>
-        <label>Barrel distance from knob (m)</label>
-        <input id="barrel_m" type="number" step="0.01" value="0.58"
-               title="Distance from sensor on knob to impact point (sweet spot). 26” bat ≈ 0.66 m total; sweet spot ~0.58 m.">
-      </div>
-      <div>
-        <label>Bat weight (oz)</label>
-        <input id="bat_oz" type="number" step="1" value="16" title="Total bat weight in ounces.">
-      </div>
-      <div>
-        <label>Min swing duration (ms)</label>
-        <input id="min_ms" type="number" step="10" value="60">
-      </div>
-      <div>
-        <label>Gap bridge (ms)</label>
-        <input id="gap_ms" type="number" step="5" value="40">
-      </div>
-      <div>
-        <label>Noise floor cut (lowest %)</label>
-        <input id="quiet_pct" type="number" step="5" value="30">
+      <!-- Swing Force -->
+      <div class="gauge-card">
+        <div class="gauge-title">Swing Force</div>
+        <div class="gauge-wrap">
+          <svg class="gauge" viewBox="0 0 200 120" aria-hidden="true">
+            <path d="M20,110 A90,90 0 0 1 180,110"
+                  fill="none" stroke="#1f2a57" stroke-width="16" stroke-linecap="round"/>
+            <path id="gForce" d="M20,110 A90,90 0 0 1 180,110"
+                  fill="none" stroke="url(#gradForce)" stroke-width="16" stroke-linecap="round"
+                  stroke-dasharray="283" stroke-dashoffset="283" />
+            <defs>
+              <linearGradient id="gradForce" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#6ea8fe"/>
+                <stop offset="100%" stop-color="#ffd66e"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="big-num"><span id="m_force">—</span><span class="units">/100</span></div>
       </div>
     </div>
-  </details>
-</section>
 
+    <!-- Center chip: Bat speed (smaller) -->
+    <div class="chip-row">
+      <div class="chip">
+        <span class="hint">Peak bat speed</span>
+        <b id="m_speed">—</b><span class="hint">mph</span>
+      </div>
+    </div>
 
-  <!-- Paste box (collapsed by default on mobile) -->
+    <!-- Secondary chip: max g (tiny) -->
+    <div class="chip-row" style="margin-top:6px">
+      <div class="chip" style="opacity:.85">
+        <span class="hint">Max dynamic g</span>
+        <b id="m_g">—</b><span class="hint">g</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Results list -->
+  <section class="list">
+    <div class="hint">Detected swings</div>
+    <div id="results" class="mono small" style="margin-top:6px">—</div>
+  </section>
+
+  <!-- Collapsible: Advanced settings (rarely changed) -->
   <section class="panel">
     <details>
-      <summary><span class="sumline">Paste WT901 export (keep headers)</span></summary>
-      <textarea id="raw" placeholder="Paste your WT901 dump here…"></textarea>
-      <div class="hint" style="margin-top:6px">
-        Format is fine with either tabs or commas. Time like <code>2025-8-27 18:13:17.39</code> is accepted.
+      <summary><span class="sumline">Advanced settings</span></summary>
+      <div class="stack">
+        <div>
+          <label>Barrel distance from knob (m)</label>
+          <input id="barrel_m" type="number" step="0.01" value="0.58"
+                 title="Distance from sensor on knob to impact point (sweet spot). 26” bat ≈ 0.66 m total; sweet spot ~0.58 m.">
+        </div>
+        <div>
+          <label>Bat weight (oz)</label>
+          <input id="bat_oz" type="number" step="1" value="16" title="Total bat weight in ounces.">
+        </div>
+        <div>
+          <label>Min swing duration (ms)</label>
+          <input id="min_ms" type="number" step="10" value="80">
+        </div>
+        <div>
+          <label>Gap bridge (ms)</label>
+          <input id="gap_ms" type="number" step="5" value="40">
+        </div>
+        <div>
+          <label>Noise floor cut (lowest %)</label>
+          <input id="quiet_pct" type="number" step="5" value="30">
+        </div>
       </div>
     </details>
   </section>
 
-  <!-- Swings -->
+  <!-- Collapsible: Paste area -->
   <section class="panel">
-    <div class="hint">Detected swings</div>
-    <div id="results" class="mono" style="margin-top:8px">—</div>
+    <details>
+      <summary><span class="sumline">Paste WT901 raw data</span></summary>
+      <div style="padding:12px 12px 4px">
+        <label for="raw">Paste raw sensor export (tab or comma separated). Keep headers.</label>
+        <textarea id="raw" placeholder="Paste your WT901 dump here…"></textarea>
+      </div>
+    </details>
   </section>
+
 </main>
 
 <script>
-/* ---------- helpers ---------- */
 const $ = sel => document.querySelector(sel);
-function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
-function median(a){ if (!a.length) return 0; const s=[...a].sort((x,y)=>x-y); const m=Math.floor((s.length-1)/2); return s.length%2? s[m] : 0.5*(s[m]+s[m+1]); }
-function mad(a){ if(!a.length) return 0; const m=median(a); return median(a.map(v=>Math.abs(v-m))); }
-function rollingMax(arr,w){
-  const out = new Array(arr.length).fill(-Infinity); let q=[];
-  for(let i=0;i<arr.length;i++){
-    while(q.length && arr[q[q.length-1]]<=arr[i]) q.pop();
-    q.push(i);
-    const start = i-w+1;
-    if (q[0] < start) q.shift();
-    if (i>=w-1) out[i] = arr[q[0]];
-  }
-  for(let i=0;i<w-1;i++) out[i]=out[w-1];
-  return out;
-}
-function msToClock(ms){ const s = ms/1000; const m = Math.floor(s/60); const sec = (s%60).toFixed(3).padStart(6,'0'); return `${m}:${sec}`; }
 
-/* Robust timestamp parser - handles 'YYYY-M-D HH:MM:SS.m[mm]'*/
+/* ---------- Parsing / math helpers ---------- */
 function parseTS(t){
+  // Flexible "YYYY-M-D HH:MM:SS.mmm"
   const m = String(t).trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
   if (m){
     const [_, Y, Mo, D, H, Mi, S, msRaw] = m;
@@ -198,18 +214,53 @@ function parseTS(t){
     const d = new Date(iso);
     if (!isNaN(d)) return d.getTime();
   }
-  const d2 = new Date(t); if (!isNaN(d2)) return d2.getTime();
-  const num = Number(t); if (isFinite(num)) return num < 3e10 ? Math.round(num*1000) : Math.round(num);
+  const d2 = new Date(t);
+  if (!isNaN(d2)) return d2.getTime();
+  const num = Number(t);
+  if (isFinite(num)) return num < 3e10 ? Math.round(num*1000) : Math.round(num);
   return NaN;
 }
+function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+function median(a){ if (!a.length) return 0; const s=[...a].sort((x,y)=>x-y); const m=Math.floor((s.length-1)/2); return s.length%2? s[m] : 0.5*(s[m]+s[m+1]); }
+function mad(a){ if(!a.length) return 0; const m=median(a); return median(a.map(v=>Math.abs(v-m))); }
+function rollingMax(arr, w){
+  const out = new Array(arr.length).fill(-Infinity);
+  let q=[];
+  for (let i=0;i<arr.length;i++){
+    while(q.length && arr[q[q.length-1]]<=arr[i]) q.pop();
+    q.push(i);
+    const start = i-w+1;
+    if (q[0] < start) q.shift();
+    if (i>=w-1) out[i] = arr[q[0]];
+  }
+  for (let i=0;i<w-1;i++) out[i]=out[w-1];
+  return out;
+}
+function averageDt(rows){
+  let sum=0, cnt=0;
+  for (let i=1;i<rows.length;i++){
+    const d = rows[i].t - rows[i-1].t;
+    if (d>0 && d<200) { sum+=d; cnt++; }
+  }
+  return cnt? sum/cnt : 10;
+}
+function timeToSamples(rows, ms){
+  const dt = averageDt(rows) || 10;
+  return Math.max(1, Math.round(ms / dt));
+}
+function msToClock(ms){
+  const s = ms/1000;
+  const m = Math.floor(s/60);
+  const sec = (s%60).toFixed(3).padStart(6,'0');
+  return `${m}:${sec}`;
+}
 
-/* ---------- parsing & cleaning ---------- */
+/* ---------- Data processing ---------- */
 function parseTable(text){
   const lines = text.replace(/\r/g,'').split('\n').filter(s=>s.trim().length>0);
   if (!lines.length) return [];
   const hdr = lines[0].split(/\t|,/).map(h=>h.trim());
   const findCol = (names)=> hdr.findIndex(h => names.some(n => h.toLowerCase().includes(n)));
-
   const iTime = findCol(['time']);
   const iAsX = findCol(['asx','gx','gyro x']);
   const iAsY = findCol(['asy','gy','gyro y']);
@@ -235,7 +286,10 @@ function parseTable(text){
 
   let allTS = rows.map(r=>parseTS(r.rawTime));
   const invalid = allTS.some(v=>!isFinite(v));
-  if (invalid){ const dtGuess = 10; allTS = rows.map((_,i)=> i*dtGuess); }
+  if (invalid){
+    const dtGuess = 10; // ms
+    allTS = rows.map((_,i)=> i*dtGuess);
+  }
   const t0 = allTS[0] || 0;
   allTS = allTS.map(t=> Math.max(0, t - t0));
 
@@ -250,41 +304,37 @@ function parseTable(text){
     gx: (r.AsX||0)*toDeg,
     gy: (r.AsY||0)*toDeg,
     gz: (r.AsZ||0)*toDeg,
-    ax: (r.Ax||0), ay: (r.Ay||0), az: (r.Az||0)
+    ax: (r.Ax||0),
+    ay: (r.Ay||0),
+    az: (r.Az||0)
   }));
 
   // Clip absurd gyro spikes
-  const cap = 1200;
+  const cap = 1200; // °/s
   cleaned.forEach(r=>{
-    r.gx = clamp(r.gx,-cap,cap);
-    r.gy = clamp(r.gy,-cap,cap);
-    r.gz = clamp(r.gz,-cap,cap);
+    r.gx = clamp(r.gx, -cap, cap);
+    r.gy = clamp(r.gy, -cap, cap);
+    r.gz = clamp(r.gz, -cap, cap);
   });
 
   return cleaned;
 }
 
-function averageDt(rows){
-  let sum=0,cnt=0;
-  for (let i=1;i<rows.length;i++){ const d=rows[i].t-rows[i-1].t; if (d>0 && d<200){ sum+=d; cnt++; } }
-  return cnt? sum/cnt : 10;
-}
-function timeToSamples(rows, ms){ const dt=averageDt(rows)||10; return Math.max(1, Math.round(ms/dt)); }
-
-/* ---------- swing detection ---------- */
 function detectSwings(rows, opts){
-  const {minMs=60, gapMs=40, quietPct=30} = opts;
-  const gmag = rows.map(r=> Math.hypot(r.gx,r.gy,r.gz));
+  const {minMs=80, gapMs=40, quietPct=30} = opts;
+
+  const gmag = rows.map(r=> Math.hypot(r.gx, r.gy, r.gz)); // °/s
   const dtAvg = averageDt(rows);
   const win = Math.max(2, Math.round(20 / (dtAvg||10)));
   const gmax = rollingMax(gmag, win);
 
-  const n=gmax.length;
-  const sorted=[...gmax].sort((a,b)=>a-b);
-  const keep=Math.max(10, Math.floor(n*(quietPct/100)));
-  const quiet=sorted.slice(0, keep);
-  const base=median(quiet);
-  const sigma=mad(quiet)*1.4826;
+  const n = gmax.length;
+  const sorted = [...gmax].sort((a,b)=>a-b);
+  const keep = Math.max(10, Math.floor(n * (quietPct/100)));
+  const quiet = sorted.slice(0, keep);
+  const base = median(quiet);
+  const qmad = mad(quiet);
+  const sigma = qmad * 1.4826;
 
   const th_on  = Math.max(base + 3.5*sigma, 180);
   const th_off = Math.max(base + 2.0*sigma, 120);
@@ -299,15 +349,21 @@ function detectSwings(rows, opts){
     const above = gmax[i] >= th_on;
     const below = gmax[i] <= th_off;
 
-    if (!inSwing && above){ inSwing=true; startIdx=i; lastIdx=i; }
-    else if (inSwing){
-      if (!below){ lastIdx=i; }
-      else {
+    if (!inSwing && above){
+      inSwing = true;
+      startIdx = i;
+      lastIdx = i;
+    } else if (inSwing){
+      if (!below){
+        lastIdx = i;
+      } else {
         const gap = i - lastIdx;
         if (gap > maxGap){
           if (lastIdx - startIdx + 1 >= minSamples){
-            const peak = Math.max(...gmax.slice(startIdx,lastIdx+1));
-            if (peak >= th_peak) spans.push([startIdx,lastIdx]);
+            const peak = Math.max(...gmax.slice(startIdx, lastIdx+1));
+            if (peak >= th_peak){
+              spans.push([startIdx, lastIdx]);
+            }
           }
           inSwing=false; startIdx=null; lastIdx=null;
         }
@@ -316,14 +372,15 @@ function detectSwings(rows, opts){
   }
   if (inSwing && lastIdx!=null && startIdx!=null){
     if (lastIdx - startIdx + 1 >= minSamples){
-      const peak = Math.max(...gmax.slice(startIdx,lastIdx+1));
-      if (peak >= th_peak) spans.push([startIdx,lastIdx]);
+      const peak = Math.max(...gmax.slice(startIdx, lastIdx+1));
+      if (peak >= th_peak){
+        spans.push([startIdx, lastIdx]);
+      }
     }
   }
-  return {spans, thresholds:{th_on,th_off,th_peak,base,sigma}};
+  return {spans, thresholds:{th_on, th_off, th_peak, base, sigma}};
 }
 
-/* ---------- metrics ---------- */
 function estimateMetrics(rows, span, barrelMeters){
   const [i0,i1] = span;
   const seg = rows.slice(i0, i1+1);
@@ -341,30 +398,49 @@ function estimateMetrics(rows, span, barrelMeters){
   const dynG = gVec.map(g=> Math.max(0, g - baseG));
   const peakG = Math.max(...dynG);
 
-  return {t0,t1,batSpeed_mps,batSpeed_mph,peakG};
+  return {t0,t1,peakDegPerS,peakRadPerS,batSpeed_mph,batSpeed_mps,peakG};
 }
 
-/* ---------- main ---------- */
+/* ---------- UI animation helpers ---------- */
+const GAUGE_LENGTH = 283; // semicircle path length
+function setGauge(pathEl, value){ // value 0..100
+  const v = clamp(value, 0, 100);
+  const offs = GAUGE_LENGTH * (1 - v/100);
+  pathEl.style.strokeDashoffset = String(offs);
+}
+function animateNumber(el, from, to, ms=600){
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce){ el.textContent = String(Math.round(to)); return; }
+  const start = performance.now();
+  function frame(t){
+    const p = Math.min(1, (t-start)/ms);
+    const val = from + (to-from)*(1 - Math.pow(1-p, 3)); // ease-out
+    el.textContent = String(Math.round(val));
+    if (p<1) requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- Analyze pipeline ---------- */
 function analyze(){
-  const text = ($("#raw")?.value || "").trim();
-  if (!text){ $("#status").textContent = "Paste some data in the panel below, then Analyze."; return; }
+  const text = $("#raw").value.trim();
+  if (!text){ $("#status").textContent = "Paste some data in the panel below."; return; }
 
-  const barrelMeters = Number($("#barrel_m").value)||0.58;
-  const batOz = Math.max(1, Number($("#bat_oz").value)||16);
-  const batMassKg = batOz * 0.028349523125;
-
-  const minMs  = Number($("#min_ms").value)||60;
-  const gapMs  = Number($("#gap_ms").value)||40;
-  const quietPct = clamp(Number($("#quiet_pct").value)||30, 10, 60);
-  const TARGET_UP = 1 + (Number($("#upPct").value)||15)/100;
+  const barrelMeters = Number($("#barrel_m")?.value || 0.58) || 0.58;
+  const batOz = Math.max(1, Number($("#bat_oz")?.value || 16));
+  const batMassKg = batOz * 0.028349523125; // oz → kg
+  const minMs  = Number($("#min_ms")?.value || 80);
+  const gapMs  = Number($("#gap_ms")?.value || 40);
+  const quietPct = clamp(Number($("#quiet_pct")?.value || 30), 10, 60);
+  const TARGET_UP = 1 + (Number($("#upPct")?.value || 15)/100);
 
   const rows = parseTable(text);
   if (rows.length < 5){
-    $("#status").innerHTML = 'Could not parse rows. Make sure the first line is a header.';
+    $("#status").innerHTML = '<span style="color:#ff9a9a">Could not parse rows. Make sure the first line is a header.</span>';
     return;
   }
 
-  // Guardrail: fix non-monotonic time by synthesizing dt near the observed dt
+  // Fix non-monotonic time by synthesizing dt
   const nonmono = rows.some((r,i)=> i>0 && rows[i].t <= rows[i-1].t);
   if (nonmono){
     const dt = averageDt(rows) || 10;
@@ -372,20 +448,11 @@ function analyze(){
   }
 
   const {spans, thresholds} = detectSwings(rows, {minMs, gapMs, quietPct});
-  if (!spans.length){
-    $("#results").innerHTML = `<div>No swings detected with auto-thresholds.<br/>
-      <div class="hint">Try: lower <b>Min swing duration</b>, increase <b>Gap bridge</b>, or raise <b>Noise floor cut</b> to 40–50%.</div>
-    </div>`;
-    $("#m_speed").textContent = "—";
-    $("#m_power").textContent = "—";
-    $("#m_force").textContent = "—";
-    $("#status").innerHTML = `Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s.`;
-    return;
-  }
 
   const metrics = [];
   let bestRaw = 0;
-  const rawScore = (mph,g)=> 1.5*mph + 10*g; // Power Number base (independent of bat weight)
+  const rawScore = (mph,g)=> 1.5*mph + 10*g; // Effort base (independent of bat weight)
+
   for (const span of spans){
     const m = estimateMetrics(rows, span, barrelMeters);
     m.raw = rawScore(m.batSpeed_mph, m.peakG);
@@ -393,23 +460,39 @@ function analyze(){
     if (m.raw > bestRaw) bestRaw = m.raw;
   }
 
-  const denomRaw = (TARGET_UP * (bestRaw || 1));
+  if (!spans.length){
+    $("#results").innerHTML = `<div class="hint">No swings detected with auto-thresholds.<br/>Try: lower <b>Min swing duration</b>, increase <b>Gap bridge</b>, or raise <b>Noise floor cut</b> to 40–50%.</div>`;
+    $("#m_speed").textContent = "—";
+    $("#m_g").textContent="—";
+    $("#m_effort").textContent="—";
+    $("#m_force").textContent="—";
+    $("#status").innerHTML = `
+      <div class="hint">
+        Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s.
+        dt≈${(averageDt(rows)||0).toFixed(1)} ms
+      </div>`;
+    return;
+  }
+
+  // Compute final indices
+  const denomRaw = TARGET_UP * (bestRaw || 1);
   const refOz = 16;
   const refMassKg = refOz * 0.028349523125;
   const bestSpeedMps = Math.max(...metrics.map(m=>m.batSpeed_mps)) || 0.01;
 
-  let bestSpeed=0, bestPower=0, bestForce=0;
+  let bestSpeed=0, bestG=0, bestEffort=0, bestForce=0;
   const out=[];
   spans.forEach((span, idx)=>{
     const m = metrics[idx];
-    const power = clamp(Math.round(100 * m.raw / denomRaw), 0, 100);
+    const effort = clamp(Math.round(100 * m.raw / denomRaw), 0, 100);
     const forceIdx = clamp(
       Math.round(100 * ((batMassKg * m.batSpeed_mps) / (TARGET_UP * (refMassKg * bestSpeedMps)))),
       0, 100
     );
 
     bestSpeed = Math.max(bestSpeed, m.batSpeed_mph);
-    bestPower = Math.max(bestPower, power);
+    bestG     = Math.max(bestG, m.peakG);
+    bestEffort= Math.max(bestEffort, effort);
     bestForce = Math.max(bestForce, forceIdx);
 
     const [i0,i1] = span;
@@ -419,35 +502,57 @@ function analyze(){
       <div class="swing">
         <div><b>Swing ${idx+1}</b> <span class="hint">(${m.t0} → ${m.t1}, ${samples} samples)</span></div>
         <div>Peak bat speed: <b>${m.batSpeed_mph.toFixed(1)} mph</b></div>
-        <div>Dynamic g: <b>${m.peakG.toFixed(2)} g</b></div>
-        <div>Power Number: <b>${power}</b> <span class="hint">(100 ≈ ${Math.round((TARGET_UP-1)*100)}% stronger than best in file)</span></div>
-        <div>Swing Force: <b>${forceIdx}</b> <span class="hint">(vs best speed @ ${refOz} oz)</span></div>
+        <div>Peak dynamic g: <b>${m.peakG.toFixed(2)} g</b></div>
+        <div>Swing Effort: <b>${effort}</b> / 100</div>
+        <div>Swing Force: <b>${forceIdx}</b> / 100 <span class="hint">(scaled vs. best speed @ ${refOz} oz)</span></div>
       </div>
     `);
   });
 
-  // Update UI
+  // Animate hero readouts
+  animateNumber($("#m_effort"), Number($("#m_effort").textContent)||0, bestEffort, 650);
+  animateNumber($("#m_force"),  Number($("#m_force").textContent)||0,  bestForce,  650);
+  animateNumber($("#m_speed"),  Number($("#m_speed").textContent)||0,  bestSpeed,  500);
+  $("#m_g").textContent = bestG.toFixed(2);
+
+  // Gauge sweep (CSS transition via inline style)
+  const gEff = document.getElementById('gEffort');
+  const gFor = document.getElementById('gForce');
+  gEff.style.transition = gFor.style.transition = 'stroke-dashoffset .7s cubic-bezier(.2,.9,.2,1)';
+  setGauge(gEff, bestEffort);
+  setGauge(gFor, bestForce);
+
   $("#results").innerHTML = out.join("");
-  $("#m_speed").textContent = bestSpeed.toFixed(1);
-  $("#m_power").textContent = String(bestPower);
-  $("#m_force").textContent = String(bestForce);
   $("#status").innerHTML = `
-    Found <b>${spans.length}</b> swing(s).
-    <span class="hint">Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s.</span>
-  `;
+    <div class="hint">
+      Found <b>${spans.length}</b> swing(s).
+      Auto thresholds: on=${thresholds.th_on.toFixed(0)}°/s, off=${thresholds.th_off.toFixed(0)}°/s, peak≥${thresholds.th_peak.toFixed(0)}°/s.
+      dt≈${(averageDt(rows)||0).toFixed(1)} ms
+    </div>`;
 }
 
-/* listeners */
-document.getElementById("upLabel").textContent = (document.getElementById("upPct").value||"15") + "%";
-$("#analyze").addEventListener("click", analyze);
-$("#clear").addEventListener("click", ()=>{
-  const ta = $("#raw"); if (ta) ta.value = "";
+/* ---------- Hooks ---------- */
+document.getElementById("analyze").addEventListener("click", analyze);
+document.getElementById("clear").addEventListener("click", ()=>{
+  $("#raw").value = "";
   $("#results").textContent = "—";
   $("#m_speed").textContent = "—";
-  $("#m_power").textContent = "—";
+  $("#m_g").textContent = "—";
+  $("#m_effort").textContent = "—";
   $("#m_force").textContent = "—";
+  const gEff = document.getElementById('gEffort');
+  const gFor = document.getElementById('gForce');
+  if (gEff && gFor){ setGauge(gEff, 0); setGauge(gFor, 0); }
   $("#status").textContent = "";
+});
+
+// Initialize gauges at 0
+window.addEventListener('DOMContentLoaded', ()=>{
+  const gEff = document.getElementById('gEffort');
+  const gFor = document.getElementById('gForce');
+  setGauge(gEff, 0); setGauge(gFor, 0);
 });
 </script>
 </body>
 </html>
+

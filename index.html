@@ -1,204 +1,613 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>WT901BLECL · Max Accel (iPhone)</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 16px; color: #0f172a; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; }
-    .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03); flex: 1; min-width: 260px; }
-    h1 { font-size: 20px; margin: 0 0 12px; }
-    h2 { font-size: 16px; margin: 0 0 8px; }
-    .btn { appearance: none; border: 0; border-radius: 10px; padding: 10px 14px; background: #059669; color: white; font-weight: 600; }
-    .btn:disabled { background: #9ca3af; }
-    .field { display: flex; align-items: center; gap: 8px; }
-    .kv { display: grid; grid-template-columns: auto auto; gap: 4px 10px; font-variant-numeric: tabular-nums; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    small { color: #64748b; }
-    .value { font-size: 22px; font-weight: 700; }
-    .warn { color: #b45309; }
-    .ok { color: #047857; }
-    .err { color: #b91c1c; }
-    .tiny { font-size: 12px; }
-    footer { color:#64748b; font-size:12px; margin-top:16px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bat Swing Calculator (Alignment-Free)</title>
+<style>
+  :root { --bg:#0b1020; --card:#121933; --ink:#e9eefc; --muted:#97a0c0; --accent:#7aa2ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+         background: linear-gradient(180deg, #0b1020 0%, #0e1530 100%); color: var(--ink); }
+  header { padding: 24px; text-align:center; }
+  header h1 { margin:0 0 6px; font-size: 1.6rem; }
+  header p { margin:0; color: var(--muted); }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; gap: 16px; }
+  .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+  @media (max-width: 1100px){ .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid #22305f; border-radius: 12px; padding:16px; }
+  h2 { margin: 0 0 12px; font-size: 1.1rem; }
+  textarea { width: 100%; min-height: 220px; background:#0c1433; color:var(--ink);
+             border:1px solid #22305f; border-radius: 10px; padding:12px; resize: vertical; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:10px 0 0; }
+  .controls input[type="number"]{ width:100px; }
+  .btn { background: var(--accent); color:#0b1020; border:0; padding:10px 14px; border-radius:10px;
+         font-weight:600; cursor:pointer; }
+  .btn.secondary { background:#273a7a; color:#d8e2ff; }
+  .muted { color: var(--muted); font-size: 0.95rem; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .stat { padding:10px 12px; background:#0c1433; border:1px solid #22305f; border-radius:10px; }
+  label { color: var(--muted); font-size: 0.92rem; }
+  input[type="file"] { display:none; }
+  .drop { border:1px dashed #3550a8; padding:10px; border-radius:10px; text-align:center; color: var(--muted); }
+  canvas { width: 100%; height: 280px; background:#0a1128; border:1px solid #22305f; border-radius:10px; }
+  table { width:100%; border-collapse: collapse; }
+  th, td { padding:8px 10px; border-bottom:1px solid #22305f; text-align:left; }
+  th { color:#afbbdf; font-weight:600; }
+  .footer { text-align:center; color: var(--muted); padding: 18px; font-size: 0.9rem; }
+  .note { color:#ffdf8f; }
+  select { background:#0c1433; color:var(--ink); border:1px solid #22305f; border-radius:8px; padding:8px; }
+</style>
 </head>
 <body>
-  <h1>WT901BLECL · Max Acceleration (X/Y/Z)</h1>
-  <div class="row">
+<header>
+  <h1>Bat Swing Calculator (Alignment-Free)</h1>
+  <p>Paste WT901 export (TSV or CSV) or drop a file. Segments and labels multiple swings automatically.</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>Paste data or drop a file</h2>
+    <div class="drop" id="dropZone">Drop .csv or .tsv here, or paste into the box</div>
+    <textarea id="raw" placeholder="Paste your WT901 rows here. Headers may include: time, AccX(g), AccY(g), AccZ(g), AsX(°/s), AsY(°/s), AsZ(°/s)..."></textarea>
+    <div class="controls">
+      <label class="row">
+        <span>Radii (m):</span>
+        <input id="radii" type="text" value="0.50 0.58 0.66">
+      </label>
+      <label class="row">
+        <span>Smooth N (gyro):</span>
+        <input id="smoothN" type="number" min="1" max="21" step="1" value="3">
+      </label>
+      <label class="row">
+        <span>Robust peak percentile:</span>
+        <input id="pct" type="number" min="90" max="100" step="0.5" value="98">
+      </label>
+
+      <!-- NEW: swing segmentation controls -->
+      <label class="row">
+        <span>ω threshold (rad/s):</span>
+        <input id="wThresh" type="number" min="0" step="0.5" value="10">
+      </label>
+      <label class="row">
+        <span>Min swing dur (s):</span>
+        <input id="minDur" type="number" min="0.05" step="0.05" value="0.18">
+      </label>
+      <label class="row">
+        <span>Gap to split (ms):</span>
+        <input id="gapMs" type="number" min="50" step="10" value="300">
+      </label>
+      <label class="row">
+        <span>Min peak ω (rad/s):</span>
+        <input id="minPeak" type="number" min="0" step="0.5" value="12">
+      </label>
+
+      <button class="btn" id="analyze">Analyze</button>
+      <label for="file" class="btn secondary">Choose file</label>
+      <input id="file" type="file" accept=".csv,.tsv,.txt">
+      <button class="btn secondary" id="download">Download JSON</button>
+    </div>
+    <p class="muted">
+      Segmentation looks for bursts of angular velocity above a threshold, with a brief low-activity gap between swings.
+      Adjust thresholds if your data is very fast or very slow.
+    </p>
+  </div>
+
+  <div class="grid">
     <div class="card">
-      <h2>1) Connect</h2>
-      <div class="field">
-        <button id="btnConnect" class="btn">Connect & Subscribe</button>
-        <span id="status">Disconnected</span>
-      </div>
-      <div class="tiny"><small>Tip: On iPhone, open this page in the <b>Bluefy</b> or <b>WebBLE</b> browser.</small></div>
-      <div class="tiny"><small>We auto-detect the notify characteristic and parse 0x55 0x61 frames (accel, gyro, angle).</small></div>
+      <h2>Results (overall)</h2>
+      <div class="row" id="stats"></div>
+      <p class="muted" id="meta"></p>
     </div>
     <div class="card">
-      <h2>2) Window</h2>
-      <div class="field">
-        <label>Duration (s)</label>
-        <input id="winSec" type="number" value="10" min="1" max="120" style="width:80px;">
-        <button id="btnReset" class="btn" style="background:#2563eb">Reset Max</button>
+      <h2>Swings detected</h2>
+      <div class="row" style="margin-bottom:10px">
+        <label class="row">
+          <span>Show swing:</span>
+          <select id="swingSelect">
+            <option value="-1" selected>All swings (overlay)</option>
+          </select>
+        </label>
+        <button class="btn secondary" id="plotSwing">Replot selected</button>
       </div>
-      <div class="tiny"><small>Rolling window: samples older than this are dropped. Tap "Reset Max" to clear.</small></div>
+      <div id="swingsTableWrap"></div>
     </div>
   </div>
 
-  <div class="row" style="margin-top:12px">
+  <div class="grid">
     <div class="card">
-      <h2>Live Accel (g)</h2>
-      <div class="kv mono">
-        <div>X</div><div id="liveAx" class="value">—</div>
-        <div>Y</div><div id="liveAy" class="value">—</div>
-        <div>Z</div><div id="liveAz" class="value">—</div>
-      </div>
-      <div class="tiny"><small>Scaled using: int16/32768×16g (per WT BLE protocol).</small></div>
+      <h2>Dynamic acceleration magnitude (|a| − 1 g)</h2>
+      <canvas id="dynChart" width="800" height="280"></canvas>
     </div>
     <div class="card">
-      <h2>Window Max (g)</h2>
-      <div class="kv mono">
-        <div>Max X</div><div id="maxAx" class="value ok">—</div>
-        <div>Max Y</div><div id="maxAy" class="value ok">—</div>
-        <div>Max Z</div><div id="maxAz" class="value ok">—</div>
+      <h2>Instantaneous barrel speed (choose a radius below)</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label class="row">
+          <span>Speed plot radius (m):</span>
+          <input id="plotR" type="number" step="0.01" value="0.58">
+        </label>
+        <button class="btn secondary" id="replot">Replot speed</button>
+        <span class="muted">Uses |ω| × R</span>
       </div>
-      <div class="tiny"><small>Computed over the last <span id="winLabel">10</span>s of samples.</small></div>
+      <canvas id="speedChart" width="800" height="280"></canvas>
     </div>
   </div>
 
-  <div class="card" style="margin-top:12px">
-    <h2>Debug</h2>
-    <div class="kv tiny mono">
-      <div>Packets</div><div id="packets">0</div>
-      <div>Last Flag</div><div id="flag">—</div>
-      <div>Last Len</div><div id="pktLen">—</div>
-      <div>Last Error</div><div id="err" class="err">—</div>
-    </div>
+  <div class="card">
+    <h2>Notes</h2>
+    <ul class="muted">
+      <li>Max dynamic g is alignment-free: uses acceleration magnitude minus 1 g.</li>
+      <li>Speed uses gyro magnitude. Robust peak uses percentile to avoid one-sample spikes.</li>
+      <li>Segmentation: ω crosses a threshold, stays high for a minimal duration, and is separated by a low-ω gap.</li>
+    </ul>
   </div>
+</div>
 
-  <footer>
-    Based on WitMotion WT901 BLE protocol (0x55 0x61 combined frame). Quaternion/magnetometer available via read-register commands.
-  </footer>
+<div class="footer">© You. Static HTML. No data leaves your browser.</div>
 
 <script>
-const $ = id => document.getElementById(id);
-const statusEl = $("status");
-const liveAx = $("liveAx"), liveAy = $("liveAy"), liveAz = $("liveAz");
-const maxAx = $("maxAx"), maxAy = $("maxAy"), maxAz = $("maxAz");
-const winInput = $("winSec"), winLabel = $("winLabel");
-const errEl = $("err"), flagEl = $("flag"), pktLenEl = $("pktLen"), packetsEl = $("packets");
+/* ---------- helpers ---------- */
+const byId = (id) => document.getElementById(id);
+const fmt = (x, d=2) => (isFinite(x) ? Number(x).toFixed(d) : "—");
+const mph = (mps) => mps * 2.23693629;
 
-let device, server, charNotify;
-let packets = 0;
-let windowSec = 10;
-let buf = []; // {t, ax, ay, az}
-
-function setStatus(s){ statusEl.textContent = s; }
-function clampWindow(){
-  const cutoff = Date.now() - windowSec*1000;
-  while (buf.length && buf[0].t < cutoff) buf.shift();
-}
-function updateMax(){
-  if (buf.length === 0) { maxAx.textContent = maxAy.textContent = maxAz.textContent = "—"; return; }
-  let mX = -1e9, mY = -1e9, mZ = -1e9;
-  for (const r of buf) { if (r.ax > mX) mX = r.ax; if (r.ay > mY) mY = r.ay; if (r.az > mZ) mZ = r.az; }
-  maxAx.textContent = mX.toFixed(3);
-  maxAy.textContent = mY.toFixed(3);
-  maxAz.textContent = mZ.toFixed(3);
-}
-function resetMax(){
-  buf = [];
-  updateMax();
+function detectSep(text){
+  const tabs = (text.match(/\t/g)||[]).length;
+  const commas = (text.match(/,/g)||[]).length;
+  return tabs >= commas ? "\t" : ",";
 }
 
-winInput.addEventListener("change", ()=>{
-  windowSec = Math.max(1, Math.min(120, Number(winInput.value)||10));
-  winLabel.textContent = String(windowSec);
-  clampWindow(); updateMax();
-});
-$("btnReset").addEventListener("click", resetMax);
+function parseTable(text){
+  const sep = detectSep(text);
+  const lines = text.trim().split(/\r?\n/).filter(s => s.trim().length>0);
+  if(!lines.length) throw new Error("No rows detected.");
+  const header = lines[0].split(sep).map(s => s.trim());
+  const rows = lines.slice(1).map(line => line.split(sep));
 
-function dvI16LE(dv, off){
-  let v = dv.getInt16(off, true); // little-endian
-  return v;
-}
-function parseFrame(v){
-  // Expect 20 bytes: 0x55, 0x61, then 18 bytes = 9 * int16
-  const dv = new DataView(v.buffer, v.byteOffset, v.byteLength);
-  const len = dv.byteLength;
-  pktLenEl.textContent = len;
-  if (len < 20) { errEl.textContent = "short packet"; return null; }
-  const h = dv.getUint8(0), f = dv.getUint8(1);
-  flagEl.textContent = "0x"+f.toString(16);
-  if (h !== 0x55) { errEl.textContent = "bad header"; return null; }
-  if (f !== 0x61) { /* other flags: 0x71.. */ errEl.textContent = "non-0x61 flag"; return null; }
-  const arr = [];
-  for (let i=0;i<9;i++){ arr.push(dvI16LE(dv, 2 + i*2)); }
-  const [ax,ay,az, wx,wy,wz, roll,pitch,yaw] = arr;
-  const g = 16.0 / 32768.0;
-  const axg = ax * g, ayg = ay * g, azg = az * g;
-  // Update live
-  liveAx.textContent = axg.toFixed(3);
-  liveAy.textContent = ayg.toFixed(3);
-  liveAz.textContent = azg.toFixed(3);
-  // Add to rolling buffer
-  buf.push({ t: Date.now(), ax: axg, ay: ayg, az: azg });
-  clampWindow();
-  updateMax();
-  return true;
-}
+  const map = {};
+  header.forEach((h,i) => map[h.toLowerCase()] = i);
 
-async function connect(){
-  try{
-    resetMax(); packets = 0; packetsEl.textContent = "0";
-    setStatus("Requesting device…");
-    // Bluefy/WebBLE support Web Bluetooth; we request all devices and include common custom services
-    const dev = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: [
-        0x180A, 0x180F, 0x181A, 0xFFE0, 0xFFF0 // include common custom services to gain access
-      ]
-    });
-    device = dev;
-    setStatus("Connecting…");
-    server = await device.gatt.connect();
-    setStatus("Discovering services…");
-    const services = await server.getPrimaryServices();
-    // Find a characteristic that supports notifications
-    let targetChar = null;
-    for (const svc of services){
-      const chars = await svc.getCharacteristics();
-      for (const ch of chars){
-        if (ch.properties && ch.properties.notify){
-          targetChar = ch; break;
-        }
-      }
-      if (targetChar) break;
+  function findCol(options){
+    for(const opt of options){
+      const k = opt.toLowerCase();
+      if(map.hasOwnProperty(k)) return map[k];
     }
-    if (!targetChar) { setStatus("No notify characteristic found"); return; }
-    charNotify = targetChar;
-    setStatus("Subscribing…");
-    await charNotify.startNotifications();
-    charNotify.addEventListener('characteristicvaluechanged', ev => {
-      packets += 1; packetsEl.textContent = String(packets);
-      const v = new Uint8Array(ev.target.value.buffer);
-      parseFrame(v);
-    });
-    setStatus("Streaming ✔︎");
-  }catch(e){
-    setStatus("Error"); errEl.textContent = String(e);
-    console.error(e);
+    for(const key in map){
+      for(const opt of options){
+        if(key.replace(/\s+/g,'').includes(opt.toLowerCase().replace(/\s+/g,''))) return map[key];
+      }
+    }
+    throw new Error("Missing column: one of " + options.join(", "));
+  }
+
+  const idx = {
+    time: findCol(["time","timestamp"]),
+    ax: findCol(["AccX(g)","accx","ax","acc_x"]),
+    ay: findCol(["AccY(g)","accy","ay","acc_y"]),
+    az: findCol(["AccZ(g)","accz","az","acc_z"]),
+    gx: findCol(["AsX(°/s)","GyroX(°/s)","gx","gyro_x"]),
+    gy: findCol(["AsY(°/s)","GyroY(°/s)","gy","gyro_y"]),
+    gz: findCol(["AsZ(°/s)","GyroZ(°/s)","gz","gyro_z"])
+  };
+
+  const out = { time: [], ax: [], ay: [], az: [], gx: [], gy: [], gz: [] };
+
+  for(const r of rows){
+    const t = r[idx.time];
+    const ax = parseFloat(r[idx.ax]); const ay = parseFloat(r[idx.ay]); const az = parseFloat(r[idx.az]);
+    const gx = parseFloat(r[idx.gx]); const gy = parseFloat(r[idx.gy]); const gz = parseFloat(r[idx.gz]);
+    if([ax,ay,az,gx,gy,gz].some(v => !isFinite(v))) continue;
+    out.time.push(new Date(t));
+    out.ax.push(ax); out.ay.push(ay); out.az.push(az);
+    out.gx.push(gx); out.gy.push(gy); out.gz.push(gz);
+  }
+  if(out.time.length < 3) throw new Error("Not enough numeric rows.");
+  return out;
+}
+
+function movingAverage(arr, n=3){
+  if(n<=1) return arr.slice();
+  const res = new Array(arr.length).fill(0);
+  const w = new Array(n).fill(1/n);
+  for(let i=0;i<arr.length;i++){
+    let s=0, c=0;
+    for(let k=0;k<n;k++){
+      const j = i + k - Math.floor(n/2);
+      if(j>=0 && j<arr.length){ s += arr[j]*w[k]; c += w[k]; }
+    }
+    res[i] = s / (c||1);
+  }
+  return res;
+}
+
+function percentile(arr, p){
+  const v = arr.slice().sort((a,b)=>a-b);
+  if(v.length===0) return NaN;
+  const rank = (p/100)*(v.length-1);
+  const i = Math.floor(rank), f = rank - i;
+  if(i+1 < v.length) return v[i]*(1-f) + v[i+1]*f;
+  return v[i];
+}
+
+function diffSeconds(ts){
+  const t0 = ts[0].getTime();
+  const d = [];
+  for(let i=1;i<ts.length;i++) d.push((ts[i].getTime() - ts[i-1].getTime())/1000);
+  d.sort((a,b)=>a-b);
+  return d.length ? (d[Math.floor(d.length/2)]) : 0.01;
+}
+
+/* ---------- metrics ---------- */
+function computeMetrics(data, options){
+  const {smoothN=3, robustPct=98, radii=[0.50,0.58,0.66]} = options;
+
+  const accMag = data.ax.map((_,i)=>Math.hypot(data.ax[i], data.ay[i], data.az[i]));
+  const dynG = accMag.map(x=>Math.max(0, x - 1.0));
+  const idxMaxG = dynG.reduce((m,v,i)=> v>dynG[m]?i:m, 0);
+
+  // ω magnitude
+  const omegaDeg = data.gx.map((_,i)=>Math.hypot(data.gx[i], data.gy[i], data.gz[i]));
+  const omega = movingAverage(omegaDeg, smoothN).map(x=>x * Math.PI/180);
+
+  const omegaAbsMax = Math.max(...omega);
+  const omegaRobust = percentile(omega, robustPct);
+
+  const dt = diffSeconds(data.time);
+
+  return {
+    time: data.time, dt,
+    accMag, dynG, idxMaxG,
+    omega, omegaAbsMax, omegaRobust,
+    radii,
+    speeds: radii.map(R => ({
+      R,
+      v_absmax_mps: omegaAbsMax * R,
+      v_absmax_mph: mph(omegaAbsMax * R),
+      v_robust_mps: omegaRobust * R,
+      v_robust_mph: mph(omegaRobust * R)
+    })),
+    tMaxG: data.time[idxMaxG]
+  };
+}
+
+/* ---------- swing segmentation ---------- */
+/*
+  Strategy:
+  - Compute |ω| (smoothed).
+  - A swing starts when |ω| rises above wThresh and ends when it remains below wThresh for gapMs.
+  - Keep segments with duration >= minDur and peak ω >= minPeak.
+*/
+function segmentSwings(time, omega, params){
+  const { wThresh=10, minDur=0.18, gapMs=300, minPeak=12 } = params;
+  if(omega.length<3) return [];
+  const n = omega.length;
+  const segments = [];
+  const ms = time.map(t => t.getTime());
+  const dtMed = diffSeconds(time);
+  const gapSamp = Math.max(1, Math.round((gapMs/1000)/Math.max(dtMed,1e-4)));
+
+  let inSwing = false;
+  let start = 0, belowCnt = 0;
+
+  for(let i=0;i<n;i++){
+    const high = omega[i] >= wThresh;
+    if(!inSwing && high){
+      inSwing = true;
+      start = i;
+      belowCnt = 0;
+    }else if(inSwing){
+      if(!high){
+        belowCnt++;
+        if(belowCnt >= gapSamp){
+          // end swing
+          const end = Math.max(start, i - belowCnt + 1);
+          segments.push([start, end]);
+          inSwing = false;
+          belowCnt = 0;
+        }
+      }else{
+        belowCnt = 0;
+      }
+    }
+  }
+  if(inSwing){
+    segments.push([start, n-1]);
+  }
+
+  // Filter segments by duration and peak ω
+  const filtered = [];
+  for(const [s,e] of segments){
+    const dur = (ms[e]-ms[s])/1000;
+    const peak = Math.max(...omega.slice(s, e+1));
+    if(dur >= minDur && peak >= minPeak){
+      filtered.push([s,e]);
+    }
+  }
+  // Merge very close segments accidentally split by brief dips
+  const merged = [];
+  for(const seg of filtered){
+    if(!merged.length){ merged.push(seg); continue; }
+    const last = merged[merged.length-1];
+    // If gap between last and seg is tiny (< gapMs/2), merge
+    const gap = (ms[seg[0]] - ms[last[1]])/1000;
+    if(gap <= (gapMs/2000)){
+      last[1] = seg[1];
+    }else{
+      merged.push(seg);
+    }
+  }
+  return merged;
+}
+
+/* ---------- plotting ---------- */
+function lineChart(canvas, t, y, highlightIdx=null, yLabel="", segments=null){
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+  if(!y.length) return;
+
+  const t0 = t[0].getTime();
+  const xs = y.map((_,i)=> (t[i].getTime()-t0)/1000);
+
+  const minY = Math.min(...y), maxY = Math.max(...y);
+  const pad = (maxY - minY) * 0.1 || 1;
+  const yMin = minY - pad, yMax = maxY + pad;
+
+  // axes
+  ctx.strokeStyle = "#27408f"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(50,10); ctx.lineTo(50,H-30); ctx.lineTo(W-10, H-30);
+  ctx.stroke();
+
+  // labels
+  ctx.fillStyle = "#98a7d8"; ctx.font = "12px system-ui, sans-serif";
+  ctx.fillText("0", 48, H-15);
+  ctx.fillText(yLabel, 10, 14);
+
+  const xMin = 0, xMax = xs[xs.length-1] || 1;
+  const X = (x) => 50 + (W-60) * (x - xMin) / (xMax - xMin || 1);
+  const Y = (v) => (H-30) - (H-40) * (v - yMin) / (yMax - yMin || 1);
+
+  // optional shaded segments
+  if(Array.isArray(segments) && segments.length){
+    ctx.fillStyle = "rgba(122,162,255,0.12)";
+    for(const [s,e] of segments){
+      const x1 = X(xs[s]), x2 = X(xs[e]);
+      ctx.fillRect(x1, 10, (x2-x1), H-40);
+    }
+  }
+
+  // line
+  ctx.strokeStyle = "#7aa2ff"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(X(xs[0]), Y(y[0]));
+  for(let i=1;i<y.length;i++) ctx.lineTo(X(xs[i]), Y(y[i]));
+  ctx.stroke();
+
+  // highlight point
+  if(highlightIdx!=null && highlightIdx>=0 && highlightIdx<y.length){
+    ctx.fillStyle = "#ffd36b";
+    ctx.beginPath();
+    ctx.arc(X(xs[highlightIdx]), Y(y[highlightIdx]), 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // x ticks
+  ctx.fillStyle = "#6e7fb7";
+  const xticks = 6;
+  for(let i=0;i<=xticks;i++){
+    const x = xMin + (xMax-xMin)*i/xticks;
+    const px = X(x);
+    ctx.beginPath(); ctx.moveTo(px, H-30); ctx.lineTo(px, H-34); ctx.strokeStyle="#27408f"; ctx.stroke();
+    ctx.fillText(x.toFixed(2)+"s", px-14, H-10);
   }
 }
 
-$("btnConnect").addEventListener("click", ()=>{
-  if (!('bluetooth' in navigator)){
-    alert("Web Bluetooth not available. On iPhone use Bluefy/WebBLE app.");
+/* ---------- UI glue ---------- */
+let lastMetrics = null;         // overall metrics (all samples)
+let lastData = null;            // parsed arrays
+let swingSegments = [];         // array of [startIdx, endIdx]
+let perSwing = [];              // metrics per swing
+
+function showStats(m){
+  const el = byId("stats");
+  el.innerHTML = "";
+  function stat(label, value){ const d = document.createElement("div"); d.className="stat"; d.innerHTML = `<div class="muted">${label}</div><div style="font-weight:700">${value}</div>`; el.appendChild(d); }
+  const maxDyn = Math.max(...m.dynG);
+  stat("Max dynamic g (|a|-1)", fmt(maxDyn,2));
+  stat("Time of max g", m.tMaxG?.toLocaleString() ?? "n/a");
+  stat("Peak ω (abs, rad/s)", fmt(m.omegaAbsMax,2));
+  stat("Peak ω (robust, rad/s)", fmt(m.omegaRobust,2));
+  m.speeds.forEach(s=>{
+    stat(`Speed @ R=${s.R} m (robust)`, `${fmt(s.v_robust_mps,2)} m/s  |  ${fmt(s.v_robust_mph,1)} mph`);
+  });
+  byId("meta").textContent = `Samples: ${m.time.length}. Median dt: ${fmt(m.dt*1000,1)} ms. SmoothN: ${byId("smoothN").value}. Percentile: ${byId("pct").value}. Swings detected: ${swingSegments.length}.`;
+}
+
+function buildSwingsTable(){
+  const wrap = byId("swingsTableWrap");
+  if(!perSwing.length){
+    wrap.innerHTML = '<p class="muted">No swings detected with current thresholds.</p>';
     return;
   }
-  connect();
+  let html = `<table>
+<thead><tr>
+  <th>Swing</th><th>Start</th><th>End</th><th>Dur (s)</th>
+  <th>Peak ω (robust, rad/s)</th><th>Speed @ 0.58 m (mph)</th><th>Max dyn g</th>
+</tr></thead><tbody>`;
+  perSwing.forEach((s,i)=>{
+    const speed58 = s.speeds.find(x=>Math.abs(x.R-0.58)<1e-6) || s.speeds[0];
+    html += `<tr>
+      <td> Swing ${i+1} </td>
+      <td> ${new Date(s.startMs).toLocaleTimeString()} </td>
+      <td> ${new Date(s.endMs).toLocaleTimeString()} </td>
+      <td> ${fmt(s.duration,2)} </td>
+      <td> ${fmt(s.omegaRobust,2)} </td>
+      <td> ${fmt(speed58.v_robust_mph,1)} </td>
+      <td> ${fmt(s.maxDynG,2)} </td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+
+  // Fill selector
+  const sel = byId("swingSelect");
+  sel.innerHTML = `<option value="-1" selected>All swings (overlay)</option>`;
+  perSwing.forEach((_,i)=>{
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = `Swing ${i+1}`;
+    sel.appendChild(opt);
+  });
+}
+
+function analyzeText(text){
+  // Parse input
+  const data = parseTable(text);
+  lastData = data;
+
+  // Options
+  const smoothN = Math.max(1, parseInt(byId("smoothN").value || "3", 10));
+  const robustPct = Math.min(100, Math.max(90, parseFloat(byId("pct").value || "98")));
+  const radii = (byId("radii").value || "0.58 0.66").split(/\s+/).map(Number).filter(x=>isFinite(x) && x>0);
+
+  // Overall metrics on full signal
+  const overall = computeMetrics(data, {smoothN, robustPct, radii});
+  lastMetrics = overall;
+
+  // Segmentation using ω
+  const segParams = {
+    wThresh: parseFloat(byId("wThresh").value || "10"),
+    minDur: parseFloat(byId("minDur").value || "0.18"),
+    gapMs: parseInt(byId("gapMs").value || "300", 10),
+    minPeak: parseFloat(byId("minPeak").value || "12"),
+  };
+  swingSegments = segmentSwings(data.time, overall.omega, segParams);
+
+  // Compute per-swing metrics
+  perSwing = swingSegments.map(([s,e], idx)=>{
+    const sub = {
+      time: data.time.slice(s,e+1),
+      ax: data.ax.slice(s,e+1),
+      ay: data.ay.slice(s,e+1),
+      az: data.az.slice(s,e+1),
+      gx: data.gx.slice(s,e+1),
+      gy: data.gy.slice(s,e+1),
+      gz: data.gz.slice(s,e+1),
+    };
+    const m = computeMetrics(sub, {smoothN, robustPct, radii});
+    return {
+      index: idx,
+      startMs: sub.time[0].getTime(),
+      endMs: sub.time[sub.time.length-1].getTime(),
+      duration: (sub.time[sub.time.length-1].getTime() - sub.time[0].getTime())/1000,
+      omegaRobust: m.omegaRobust,
+      speeds: m.speeds,
+      maxDynG: Math.max(...m.dynG),
+      dynG: m.dynG,
+      omega: m.omega,
+      time: m.time
+    };
+  });
+
+  // Plots (overall) with shaded swing windows
+  lineChart(byId("dynChart"), overall.time, overall.dynG, overall.idxMaxG, "dynamic g", swingSegments);
+  const Rplot = parseFloat(byId("plotR").value || "0.58");
+  const speedSeries = overall.omega.map(w => w*Rplot);
+  lineChart(byId("speedChart"), overall.time, speedSeries, null, "m/s", swingSegments);
+
+  // UI
+  showStats(overall);
+  buildSwingsTable();
+}
+
+function replotSelected(){
+  if(!lastMetrics || !lastData) { alert("Run an analysis first."); return; }
+  const choice = parseInt(byId("swingSelect").value, 10);
+  const Rplot = parseFloat(byId("plotR").value || "0.58");
+
+  if(choice < 0 || !perSwing.length){
+    // All swings (overall)
+    lineChart(byId("dynChart"), lastMetrics.time, lastMetrics.dynG, lastMetrics.idxMaxG, "dynamic g", swingSegments);
+    const speedSeries = lastMetrics.omega.map(w => w*Rplot);
+    lineChart(byId("speedChart"), lastMetrics.time, speedSeries, null, "m/s", swingSegments);
+    return;
+    }
+  const s = perSwing[choice];
+  lineChart(byId("dynChart"), s.time, s.dynG, null, "dynamic g");
+  const speedSeries = s.omega.map(w => w*Rplot);
+  lineChart(byId("speedChart"), s.time, speedSeries, null, "m/s");
+}
+
+/* ---- events ---- */
+byId("analyze").addEventListener("click", ()=>{
+  const text = byId("raw").value;
+  if(!text.trim()){ alert("Paste your data first."); return; }
+  try { analyzeText(text); } catch(err){ alert("Parse error: " + err.message); }
+});
+
+byId("replot").addEventListener("click", ()=>{
+  replotSelected();
+});
+
+byId("plotSwing").addEventListener("click", ()=>{
+  replotSelected();
+});
+
+/* drag and drop */
+const drop = byId("dropZone");
+drop.addEventListener("dragover", e=>{ e.preventDefault(); drop.style.background="#0d1742"; });
+drop.addEventListener("dragleave", e=>{ drop.style.background=""; });
+drop.addEventListener("drop", e=>{
+  e.preventDefault(); drop.style.background="";
+  const f = e.dataTransfer.files?.[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{ byId("raw").value = ev.target.result; };
+  reader.readAsText(f);
+});
+byId("file").addEventListener("change", e=>{
+  const f = e.target.files?.[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev)=>{ byId("raw").value = ev.target.result; };
+  reader.readAsText(f);
+});
+
+/* download JSON */
+byId("download").addEventListener("click", ()=>{
+  if(!lastMetrics){ alert("Run an analysis first."); return; }
+  const simple = {
+    overall: {
+      max_dynamic_g: Number(Math.max(...lastMetrics.dynG).toFixed(2)),
+      t_max_dynamic_g: lastMetrics.tMaxG?.toISOString(),
+      peak_omega_abs_rad_s: Number(lastMetrics.omegaAbsMax.toFixed(2)),
+      peak_omega_robust_rad_s: Number(lastMetrics.omegaRobust.toFixed(2)),
+      speeds: lastMetrics.speeds.map(s => ({
+        R_m: s.R,
+        v_robust_mps: Number(s.v_robust_mps.toFixed(3)),
+        v_robust_mph: Number(s.v_robust_mph.toFixed(2)),
+        v_absmax_mps: Number(s.v_absmax_mps.toFixed(3)),
+        v_absmax_mph: Number(s.v_absmax_mph.toFixed(2))
+      }))
+    },
+    swings: perSwing.map((s,i)=>({
+      label: `Swing ${i+1}`,
+      start_iso: new Date(s.startMs).toISOString(),
+      end_iso: new Date(s.endMs).toISOString(),
+      duration_s: Number(s.duration.toFixed(3)),
+      peak_omega_robust_rad_s: Number(s.omegaRobust.toFixed(2)),
+      max_dynamic_g: Number(s.maxDynG.toFixed(2)),
+      speeds: s.speeds.map(x=>({
+        R_m: x.R,
+        v_robust_mps: Number(x.v_robust_mps.toFixed(3)),
+        v_robust_mph: Number(x.v_robust_mph.toFixed(2))
+      }))
+    }))
+  };
+  const blob = new Blob([JSON.stringify(simple, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "swing_report.json";
+  a.click();
 });
 </script>
 </body>
